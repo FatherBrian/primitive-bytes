@@ -1,0 +1,24 @@
+---
+import Layout from '../layouts/BlogPost.astro';
+---
+
+<Layout
+	title="About"
+	description="What Primitive Bytes is about, and what I'm building."
+	pubDate={new Date('November 13 2026')}
+>
+	<p>
+		Primitive Bytes is about the small, versioned configs that make AI agents safer and easier
+		to build with: lockfiles for tools, contracts for servers, manifests for agents. Each one is
+		owned by someone, reviewed like code, and enforced by a tool rather than read by a person.
+	</p>
+	<p>
+		I'm building these in the open. The first is <code>reef lock</code>, which pins every MCP
+		tool's description and schemas so a server can't quietly change what your agent reads. It
+		lives in <a href="https://github.com/FatherBrian/trellis/tree/main/reef">Reef</a>, an
+		open-source MCP gateway.
+	</p>
+	<p>
+		Find me on <a href="https://github.com/FatherBrian">GitHub</a>.
+	</p>
+</Layout>

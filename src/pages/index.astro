@@ -1,0 +1,48 @@
+---
+import { getCollection } from 'astro:content';
+import BaseHead from '../components/BaseHead.astro';
+import Footer from '../components/Footer.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import Header from '../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import { url } from '../url';
+
+const posts = (await getCollection('blog')).sort(
+	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+	</head>
+	<body>
+		<Header />
+		<main>
+			<h1>Primitive Bytes</h1>
+			<p>
+				Every big jump in how software gets built came with a boring little file: the lockfile,
+				the Dockerfile, the manifest. AI agents don't have theirs yet.
+			</p>
+			<p>
+				This blog is about building them: small, versioned configs that describe one part of an
+				agent system, and tools that refuse to run when reality doesn't match. Short posts,
+				written while building in the open.
+			</p>
+			<h2>Posts</h2>
+			<ul>
+				{
+					posts.map((post) => (
+						<li>
+							<a href={url(`/blog/${post.id}/`)}>{post.data.title}</a>
+							{' · '}
+							<FormattedDate date={post.data.pubDate} />
+						</li>
+					))
+				}
+			</ul>
+		</main>
+		<Footer />
+	</body>
+</html>
