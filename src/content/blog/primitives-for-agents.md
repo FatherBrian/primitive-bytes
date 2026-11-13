@@ -66,6 +66,4 @@ reef lock --update   # after review: accept the change
 
 With a `reef.lock` in place, a tool whose description drifts is hidden from agents and its calls are refused before anything reaches the server.
 
-It's small, and that's the point. The next posts will be about the other two primitives, and about what I got wrong along the way. That includes a lesson I learned the hard way while building this: most of the agent attacks that made the news went through calls that were each individually allowed.
-
-If you're building with agents and have opinions about what belongs in these files, I'd like to hear them.
+It's small, and that's the point.
