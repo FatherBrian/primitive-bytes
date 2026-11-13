@@ -17,9 +17,8 @@ const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 			<p class="eyebrow">Writing</p>
 			<h1>Everything, newest first.</h1>
 			<p class="dek">
-				{count(posts, 'post')} on data and AI governance and the platforms underneath{
-					notes > 0 && <>, and {count(notes, 'note')} on whatever else</>
-				}.
+				{count(posts, 'post')}{notes > 0 && <> and {count(notes, 'note')}</>}, about data, AI and
+				whatever I'm building.
 			</p>
 		</header>
 		{
