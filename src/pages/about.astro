@@ -4,47 +4,17 @@ import Page from '../layouts/Page.astro';
 import { url } from '../url';
 ---
 
-<Page
-	title="About"
-	description="What Primitive Bytes is about: data and AI governance, and building the platforms that make it real."
->
+<Page title="About" description="Posts about data, AI, platforms, and random things I'm working on.">
 	<article class="wrap">
 		<header class="head">
 			<p class="eyebrow">About</p>
-			<h1>I build governance into platforms. This blog wanders further.</h1>
+			<h1>About</h1>
 		</header>
 		<div class="prose">
+			<p>I work on data and AI governance and the platforms around them.</p>
+			<p>Here I post about data, AI, platforms, and random things I'm working on.</p>
 			<p>
-				Data and AI governance, and building the platforms that make it real, is what I do. Most
-				organisations have the policy written down. Far fewer can enforce it at the moment data is
-				read, a model is called or an agent acts, or show afterwards who allowed what. Closing that
-				gap is the work.
-			</p>
-			<p>
-				So a lot of what's here is about that. The running theme is <strong>primitives</strong>:
-				small, versioned configs that describe one thing (a data contract, a tool lockfile, an
-				agent manifest), are owned by someone, get reviewed like code, and are enforced by a tool
-				rather than read by a person. The longer posts cover:
-			</p>
-			<ul>
-				<li>data governance: contracts, catalogs, classification and access</li>
-				<li>AI governance: what agents and models may touch, for whom, and the evidence after</li>
-				<li>platform building: gateways, policy engines, and making the secure path the easy one</li>
-				<li>agents and MCP: the protocols agents use, and where they fall short</li>
-			</ul>
-			<p>
-				But the blog isn't only that. The <strong>notes</strong> are shorter and about anything:
-				whatever I'm building, reading, trying or thinking about that week, governance or not.
-			</p>
-			<p>
-				I build in the open as I go. The first piece is <code>reef lock</code>, which pins every
-				MCP tool's description and schemas so a server can't quietly change what an agent reads.
-				It's in <a href="https://github.com/FatherBrian/trellis/tree/main/reef">Reef</a>, an
-				open-source MCP gateway.
-			</p>
-			<p>
-				Find me on <a href={GITHUB_URL}>GitHub</a>, or follow along with the
-				<a href={url('/rss.xml')}>RSS feed</a>.
+				<a href={GITHUB_URL}>GitHub</a> · <a href={url('/rss.xml')}>RSS</a>
 			</p>
 		</div>
 	</article>
@@ -53,11 +23,10 @@ import { url } from '../url';
 <style>
 	.head {
 		max-width: var(--measure);
-		margin: 4.5rem auto 2.5rem;
+		margin: 4.5rem auto 2rem;
 	}
 	.head .eyebrow {
-		margin: 0 0 1rem;
-		color: var(--accent-ink);
+		display: none;
 	}
 	@media (max-width: 640px) {
 		.head {
