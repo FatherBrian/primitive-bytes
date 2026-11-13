@@ -42,7 +42,7 @@ export const PROJECTS: Project[] = [
 	{
 		name: 'Reef',
 		blurb:
-			'An MCP gateway. Agents see only the tools their grant allows, each server gets the right credential, and reef lock pins what every tool says.',
+			'Right-size and pin what your agents can reach. reef lock pins what every MCP tool says and fails CI when a server changes it; as a gateway, each agent sees only the tools its grant allows.',
 		status: 'v0.1.1 on PyPI',
 		tags: ['Python', 'MCP', 'Platform building'],
 		links: [
