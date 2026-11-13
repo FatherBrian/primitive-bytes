@@ -2,10 +2,13 @@
 import PostList from '../../components/PostList.astro';
 import { SITE_DESCRIPTION } from '../../consts';
 import Page from '../../layouts/Page.astro';
-import { allPosts } from '../../lib/posts';
+import { allEntries } from '../../lib/posts';
 
-const posts = await allPosts();
-const years = [...new Set(posts.map((p) => p.data.pubDate.getFullYear()))];
+const entries = await allEntries();
+const years = [...new Set(entries.map((e) => e.pubDate.getFullYear()))];
+const posts = entries.filter((e) => e.kind === 'post').length;
+const notes = entries.length - posts;
+const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 ---
 
 <Page title="Writing" description={SITE_DESCRIPTION}>
@@ -14,15 +17,16 @@ const years = [...new Set(posts.map((p) => p.data.pubDate.getFullYear()))];
 			<p class="eyebrow">Writing</p>
 			<h1>Everything, newest first.</h1>
 			<p class="dek">
-				{posts.length}
-				{posts.length === 1 ? 'post' : 'posts'} on data and AI governance, and the platforms underneath.
+				{count(posts, 'post')} on data and AI governance and the platforms underneath{
+					notes > 0 && <>, and {count(notes, 'note')} on whatever else</>
+				}.
 			</p>
 		</header>
 		{
 			years.map((year) => (
 				<div class="year">
 					<h2 class="eyebrow">{year}</h2>
-					<PostList posts={posts.filter((p) => p.data.pubDate.getFullYear() === year)} />
+					<PostList entries={entries.filter((e) => e.pubDate.getFullYear() === year)} />
 				</div>
 			))
 		}

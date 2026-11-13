@@ -10,15 +10,28 @@ interface Props {
 	updatedDate?: Date;
 	tags?: string[];
 	minutes?: number;
+	/** "note" pages get a Note label, and show the description only if one was written. */
+	kind?: 'post' | 'note';
+	showDescription?: boolean;
 }
 
-const { title, description, pubDate, updatedDate, tags = [], minutes } = Astro.props;
+const {
+	title,
+	description,
+	pubDate,
+	updatedDate,
+	tags = [],
+	minutes,
+	kind = 'post',
+	showDescription = true,
+} = Astro.props;
 ---
 
 <Page title={title} description={description}>
 	<article class="wrap">
-		<header class="head">
+		<header class:list={['head', { note: kind === 'note' }]}>
 			<div class="eyebrow meta">
+				{kind === 'note' && <span class="kind">Note</span>}
 				<FormattedDate date={pubDate} />
 				{minutes && (
 					<>
@@ -36,7 +49,7 @@ const { title, description, pubDate, updatedDate, tags = [], minutes } = Astro.p
 				)}
 			</div>
 			<h1>{title}</h1>
-			<p class="dek">{description}</p>
+			{showDescription && <p class="dek">{description}</p>}
 			{tags.length > 0 && (
 				<div class="tags">
 					{tags.map((t) => (
@@ -64,8 +77,18 @@ const { title, description, pubDate, updatedDate, tags = [], minutes } = Astro.p
 	.meta {
 		display: flex;
 		flex-wrap: wrap;
+		align-items: center;
 		gap: 0.5rem;
 		margin-bottom: 1.1rem;
+	}
+	.kind {
+		padding: 0.1em 0.5em;
+		border-radius: 4px;
+		background: var(--accent-wash);
+		color: var(--accent-ink);
+	}
+	.head.note h1 {
+		font-size: clamp(1.9rem, 4vw, 2.6rem);
 	}
 	h1 {
 		margin-bottom: 0.9rem;

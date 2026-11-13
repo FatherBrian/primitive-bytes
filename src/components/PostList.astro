@@ -1,36 +1,42 @@
 ---
-import type { Post } from '../lib/posts';
+import type { Entry } from '../lib/posts';
 import { readingTime } from '../lib/posts';
-import { url } from '../url';
 import FormattedDate from './FormattedDate.astro';
 
 interface Props {
-	posts: Post[];
+	entries: Entry[];
+	/** Notes on the home page: date and title only. */
+	compact?: boolean;
 }
 
-const { posts } = Astro.props;
+const { entries, compact = false } = Astro.props;
 ---
 
-<ol class="posts">
+<ol class:list={['posts', { compact }]}>
 	{
-		posts.map((post) => (
+		entries.map((e) => (
 			<li>
-				<a href={url(`/blog/${post.id}/`)}>
+				<a href={e.href}>
 					<div class="meta eyebrow">
-						<FormattedDate date={post.data.pubDate} />
-						<span aria-hidden="true">·</span>
-						<span>{readingTime(post.body)} min read</span>
+						{e.kind === 'note' && <span class="kind">Note</span>}
+						<FormattedDate date={e.pubDate} />
+						{!compact && (
+							<>
+								<span aria-hidden="true">·</span>
+								<span>{readingTime(e.body)} min read</span>
+							</>
+						)}
 					</div>
 					<h3>
-						{post.data.title}
+						{e.title}
 						<span class="arrow" aria-hidden="true">
 							→
 						</span>
 					</h3>
-					<p>{post.data.description}</p>
-					{post.data.tags.length > 0 && (
+					{!compact && <p>{e.description}</p>}
+					{!compact && e.tags.length > 0 && (
 						<div class="tags">
-							{post.data.tags.map((t) => (
+							{e.tags.map((t) => (
 								<span class="chip">{t}</span>
 							))}
 						</div>
@@ -57,15 +63,41 @@ const { posts } = Astro.props;
 		color: inherit;
 		text-decoration: none;
 	}
+	.compact a {
+		display: flex;
+		align-items: baseline;
+		gap: 1.25rem;
+		padding: 1rem 0;
+	}
 	.meta {
 		display: flex;
+		align-items: center;
 		gap: 0.5rem;
 		margin-bottom: 0.5rem;
+	}
+	.compact .meta {
+		flex: none;
+		width: 7.5rem;
+		margin: 0;
+	}
+	.kind {
+		padding: 0.1em 0.5em;
+		border-radius: 4px;
+		background: var(--accent-wash);
+		color: var(--accent-ink);
+	}
+	.compact .kind {
+		display: none;
 	}
 	h3 {
 		margin: 0 0 0.35rem;
 		font-size: 1.45rem;
 		transition: color 0.15s ease;
+	}
+	.compact h3 {
+		margin: 0;
+		font-size: 1.08rem;
+		font-weight: 500;
 	}
 	.arrow {
 		display: inline-block;
@@ -94,5 +126,11 @@ const { posts } = Astro.props;
 		flex-wrap: wrap;
 		gap: 0.4rem;
 		margin-top: 0.9rem;
+	}
+	@media (max-width: 520px) {
+		.compact a {
+			flex-direction: column;
+			gap: 0.25rem;
+		}
 	}
 </style>
