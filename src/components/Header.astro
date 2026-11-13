@@ -13,6 +13,7 @@ import Logo from './Logo.astro';
 		</a>
 		<div class="links">
 			<HeaderLink href={url('/blog/')}>Writing</HeaderLink>
+			<HeaderLink href={url('/work/')}>Work</HeaderLink>
 			<HeaderLink href={url('/about/')}>About</HeaderLink>
 			<a class="icon hide-sm" href={url('/rss.xml')} aria-label="RSS feed">
 				<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"
@@ -137,6 +138,15 @@ import Logo from './Logo.astro';
 		}
 		.brand {
 			font-size: 0.98rem;
+		}
+	}
+	@media (max-width: 420px) {
+		.brand span {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip: rect(1px, 1px, 1px, 1px);
 		}
 	}
 	@media (max-width: 380px) {

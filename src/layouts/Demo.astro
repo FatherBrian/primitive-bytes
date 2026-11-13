@@ -1,0 +1,59 @@
+---
+// A demo page: a heading, the demo, and notes on how it maps to the real thing.
+import { url } from '../url';
+import Page from './Page.astro';
+
+interface Props {
+	title: string;
+	description: string;
+}
+
+const { title, description } = Astro.props;
+---
+
+<Page title={title} description={description}>
+	<article class="wrap">
+		<header class="head">
+			<a class="back eyebrow" href={url('/work/')}>← Work</a>
+			<h1>{title}</h1>
+			<p class="dek">{description}</p>
+		</header>
+		<div class="demo">
+			<slot name="demo" />
+		</div>
+		<div class="prose">
+			<slot />
+		</div>
+	</article>
+</Page>
+
+<style>
+	.head {
+		max-width: var(--measure);
+		margin: 4rem auto 0;
+	}
+	.back {
+		display: inline-block;
+		margin-bottom: 1rem;
+		color: var(--accent-ink);
+		text-decoration: none;
+	}
+	h1 {
+		margin-bottom: 0.75rem;
+	}
+	.dek {
+		margin: 0;
+		color: var(--ink-2);
+		font-size: 1.15rem;
+		line-height: 1.55;
+	}
+	.demo {
+		max-width: 920px;
+		margin: 0 auto;
+	}
+	@media (max-width: 640px) {
+		.head {
+			margin-top: 2.5rem;
+		}
+	}
+</style>

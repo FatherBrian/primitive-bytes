@@ -1,0 +1,416 @@
+---
+import { AGENTS, PEOPLE, TEMPLATES } from '../../lib/demo/grants';
+---
+
+<div class="playground" data-playground>
+	<div class="controls">
+		<label>
+			<span class="eyebrow">Acting for</span>
+			<select data-person>
+				{PEOPLE.map((p) => <option value={p.id}>{p.label}</option>)}
+			</select>
+		</label>
+		<label>
+			<span class="eyebrow">Agent</span>
+			<select data-agent>
+				{AGENTS.map((a) => <option value={a.id}>{a.label}</option>)}
+			</select>
+		</label>
+		<label>
+			<span class="eyebrow">Task</span>
+			<select data-template>
+				{TEMPLATES.map((t) => <option value={t.id}>{t.label}</option>)}
+			</select>
+		</label>
+	</div>
+
+	<p class="grant" data-grant></p>
+
+	<div class="table" role="table" aria-label="What each tool call would get">
+		<div class="row head" role="row">
+			<span role="columnheader">Tool</span>
+			<span role="columnheader" title="The person's own access">Person</span>
+			<span role="columnheader" title="The agent's ceiling">Agent</span>
+			<span role="columnheader" title="The task's scope">Task</span>
+			<span role="columnheader">Result</span>
+			<span role="columnheader"></span>
+		</div>
+		<div data-rows></div>
+	</div>
+
+	<section class="ledger">
+		<div class="ledger-head">
+			<h3>Ledger</h3>
+			<div class="buttons">
+				<button type="button" data-verify>Verify</button>
+				<button type="button" data-tamper>Tamper with an entry</button>
+				<button type="button" data-reset>Reset</button>
+			</div>
+		</div>
+		<p class="status" data-status>Make a call to write the first entry.</p>
+		<ol data-entries></ol>
+	</section>
+</div>
+
+<script>
+	import {
+		AGENTS,
+		PEOPLE,
+		TEMPLATES,
+		TOOLS,
+		append,
+		decide,
+		verify,
+		type Entry,
+	} from '../../lib/demo/grants';
+
+	const root = document.querySelector<HTMLElement>('[data-playground]');
+	if (root) {
+		const $ = <T extends Element>(sel: string) => root.querySelector<T>(sel)!;
+		const person = $<HTMLSelectElement>('[data-person]');
+		const agent = $<HTMLSelectElement>('[data-agent]');
+		const template = $<HTMLSelectElement>('[data-template]');
+		const rows = $<HTMLElement>('[data-rows]');
+		const grantLine = $<HTMLElement>('[data-grant]');
+		const entries = $<HTMLElement>('[data-entries]');
+		const status = $<HTMLElement>('[data-status]');
+		const chain: Entry[] = [];
+
+		const esc = (s: string) =>
+			s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+		const chip = (t: string) => `<span class="tag${t === 'pii' ? ' hot' : ''}">${esc(t)}</span>`;
+		const mark = (ok: boolean, why: string) =>
+			`<span class="mark ${ok ? 'yes' : 'no'}" title="${esc(why)}" aria-label="${ok ? 'yes' : 'no'}: ${esc(why)}">${ok ? '✓' : '✗'}</span>`;
+
+		const current = () => ({
+			p: PEOPLE.find((x) => x.id === person.value)!,
+			a: AGENTS.find((x) => x.id === agent.value)!,
+			t: TEMPLATES.find((x) => x.id === template.value)!,
+		});
+
+		function render() {
+			const { p, a, t } = current();
+			grantLine.innerHTML =
+				`<strong>${esc(a.label)}</strong> acts for <strong>${esc(p.label.split(' ')[0])}</strong> on ` +
+				`<strong>${esc(t.label)}</strong>: scope ${t.scope.map(chip).join(' ')} · ${esc(t.actions.join(', '))}`;
+			rows.innerHTML = TOOLS.map((tool, i) => {
+				const d = decide(p, a, t, tool);
+				const first = [d.person, d.agent, d.task].find((c) => !c.ok);
+				const masked = Object.entries(d.masked);
+				const detail = d.allowed
+					? masked.length
+						? `masked ${masked.map(([f, why]) => `<code title="${esc(why)}">${esc(f)}</code>`).join(', ')}`
+						: ''
+					: esc(first!.why);
+				return `<div class="row" role="row">
+					<span class="tool" role="cell"><span class="verb">${tool.action}</span> ${esc(tool.label)}
+						<span class="tags">${tool.tags.map(chip).join('')}</span></span>
+					<span role="cell" data-label="Person">${mark(d.person.ok, d.person.why)}</span>
+					<span role="cell" data-label="Agent">${mark(d.agent.ok, d.agent.why)}</span>
+					<span role="cell" data-label="Task">${mark(d.task.ok, d.task.why)}</span>
+					<span class="result ${d.allowed ? 'allow' : 'deny'}" role="cell">
+						<b>${d.allowed ? 'Allow' : 'Deny'}</b><small>${detail}</small></span>
+					<span role="cell"><button type="button" class="call" data-call="${i}">Call</button></span>
+				</div>`;
+			}).join('');
+		}
+
+		function renderLedger(broken?: number) {
+			entries.innerHTML = chain
+				.slice()
+				.reverse()
+				.map((e) => {
+					const b = e.body as Record<string, string>;
+					const bad = broken !== undefined && e.seq >= broken;
+					return `<li class="${bad ? 'bad' : ''}">
+						<span class="seq">#${e.seq}</span>
+						<span class="what"><b class="${b.result === 'ALLOW' ? 'allow' : 'deny'}">${b.result}</b>
+							${esc(b.agent)} ${esc(b.action)} ${esc(b.tool)} <small>for ${esc(b.for)}, ${esc(b.task)}${b.note ? ` · ${esc(b.note)}` : ''}</small></span>
+						<code class="hash" title="${e.hash}">${e.hash.slice(0, 10)}…</code>
+					</li>`;
+				})
+				.join('');
+		}
+
+		rows.addEventListener('click', async (ev) => {
+			const btn = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-call]');
+			if (!btn) return;
+			const { p, a, t } = current();
+			const tool = TOOLS[Number(btn.dataset.call)];
+			const d = decide(p, a, t, tool);
+			const masked = Object.keys(d.masked);
+			const first = [d.person, d.agent, d.task].find((c) => !c.ok);
+			await append(chain, {
+				result: d.allowed ? 'ALLOW' : 'DENY',
+				agent: a.label,
+				action: tool.action,
+				tool: tool.id,
+				for: p.label.split(' ')[0],
+				task: t.label,
+				note: d.allowed ? (masked.length ? `masked ${masked.join(', ')}` : '') : first!.why,
+			});
+			status.textContent = `Written before the answer went out. ${chain.length} ${chain.length === 1 ? 'entry' : 'entries'}, each linked to the one before by its hash.`;
+			status.className = 'status';
+			renderLedger();
+		});
+
+		$('[data-verify]').addEventListener('click', async () => {
+			if (!chain.length) return;
+			const bad = await verify(chain);
+			status.className = `status ${bad ? 'bad' : 'good'}`;
+			status.textContent = bad
+				? `✗ Entry #${bad.seq} fails: ${bad.why}. Everything after it is suspect.`
+				: `✓ ${chain.length} entries, chain intact.`;
+			renderLedger(bad?.seq);
+		});
+
+		$('[data-tamper]').addEventListener('click', () => {
+			const denied = chain.find((e) => (e.body as Record<string, string>).result === 'DENY') ?? chain[0];
+			if (!denied) {
+				status.textContent = 'Make a call or two first.';
+				return;
+			}
+			const b = denied.body as Record<string, string>;
+			b.result = b.result === 'DENY' ? 'ALLOW' : 'DENY';
+			b.note = 'edited after the fact';
+			status.className = 'status';
+			status.textContent = `Someone rewrote entry #${denied.seq} to say ${b.result}. Now press Verify.`;
+			renderLedger();
+		});
+
+		$('[data-reset]').addEventListener('click', () => {
+			chain.length = 0;
+			status.className = 'status';
+			status.textContent = 'Make a call to write the first entry.';
+			renderLedger();
+		});
+
+		for (const el of [person, agent, template]) el.addEventListener('change', render);
+		render();
+	}
+</script>
+
+<style>
+	.playground {
+		margin: 2rem 0;
+		padding: 1.5rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper-2);
+		box-shadow: var(--shadow);
+	}
+	.controls {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 0.75rem;
+	}
+	label {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+	select {
+		padding: 0.55rem 0.7rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.92rem;
+	}
+	.grant {
+		margin: 1.1rem 0;
+		color: var(--ink-2);
+		font-size: 0.95rem;
+	}
+	.table {
+		border-top: 1px solid var(--rule);
+	}
+	.playground :global(.row) {
+		display: grid;
+		grid-template-columns: minmax(0, 2.6fr) 3.5rem 3.5rem 3.5rem minmax(0, 2.4fr) 4rem;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.65rem 0;
+		border-bottom: 1px solid var(--rule);
+		font-size: 0.92rem;
+	}
+	.playground :global(.row.head) {
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.7rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.playground :global(.verb) {
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.75rem;
+	}
+	.playground :global(.tags) {
+		display: inline-flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		margin-left: 0.35rem;
+	}
+	.playground :global(.tag) {
+		padding: 0 0.4em;
+		border: 1px solid var(--rule);
+		border-radius: 4px;
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.68rem;
+	}
+	.playground :global(.tag.hot) {
+		border-color: var(--accent);
+		color: var(--accent-ink);
+	}
+	.playground :global(.mark) {
+		display: inline-grid;
+		place-items: center;
+		width: 1.6rem;
+		height: 1.6rem;
+		border-radius: 6px;
+		font-weight: 700;
+		cursor: help;
+	}
+	.playground :global(.mark.yes) {
+		background: rgba(46, 160, 90, 0.14);
+		color: #2e9a5a;
+	}
+	.playground :global(.mark.no) {
+		background: rgba(214, 69, 65, 0.14);
+		color: #d64541;
+	}
+	.playground :global(.result) {
+		display: flex;
+		flex-direction: column;
+		line-height: 1.35;
+	}
+	.playground :global(.result b) {
+		font-size: 0.82rem;
+	}
+	.playground :global(.result.allow b),
+	.playground :global(b.allow) {
+		color: #2e9a5a;
+	}
+	.playground :global(.result.deny b),
+	.playground :global(b.deny) {
+		color: #d64541;
+	}
+	.playground :global(.result small) {
+		color: var(--ink-3);
+		font-size: 0.78rem;
+	}
+	.playground :global(.result code) {
+		font-size: 0.75rem;
+		color: var(--accent-ink);
+		cursor: help;
+	}
+	button {
+		padding: 0.4rem 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.85rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition:
+			border-color 0.15s ease,
+			color 0.15s ease;
+	}
+	button:hover {
+		border-color: var(--accent);
+		color: var(--accent-ink);
+	}
+	.ledger {
+		margin-top: 1.75rem;
+	}
+	.ledger-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		flex-wrap: wrap;
+	}
+	.ledger h3 {
+		margin: 0;
+		font-size: 1.05rem;
+	}
+	.buttons {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
+	.status {
+		margin: 0.75rem 0;
+		color: var(--ink-2);
+		font-size: 0.9rem;
+	}
+	.status.good {
+		color: #2e9a5a;
+		font-weight: 600;
+	}
+	.status.bad {
+		color: #d64541;
+		font-weight: 600;
+	}
+	ol {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		max-height: 18rem;
+		overflow-y: auto;
+	}
+	ol :global(li) {
+		display: grid;
+		grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+		gap: 0.6rem;
+		align-items: baseline;
+		padding: 0.45rem 0;
+		border-bottom: 1px dashed var(--rule);
+		font-size: 0.85rem;
+	}
+	ol :global(li.bad) {
+		background: rgba(214, 69, 65, 0.08);
+	}
+	ol :global(.seq),
+	ol :global(.hash) {
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.75rem;
+	}
+	ol :global(small) {
+		color: var(--ink-3);
+	}
+	@media (max-width: 720px) {
+		.playground {
+			padding: 1rem;
+			margin-left: -0.25rem;
+			margin-right: -0.25rem;
+		}
+		.controls {
+			grid-template-columns: 1fr;
+		}
+		.playground :global(.row.head) {
+			display: none;
+		}
+		.playground :global(.row) {
+			grid-template-columns: repeat(3, auto) 1fr auto;
+			row-gap: 0.4rem;
+		}
+		.playground :global(.row .tool) {
+			grid-column: 1 / -1;
+		}
+		.playground :global(.row [data-label])::before {
+			content: attr(data-label);
+			margin-right: 0.3rem;
+			color: var(--ink-3);
+			font-family: var(--font-mono), monospace;
+			font-size: 0.65rem;
+			text-transform: uppercase;
+		}
+	}
+</style>
