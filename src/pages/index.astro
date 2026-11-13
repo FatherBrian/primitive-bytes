@@ -1,48 +1,118 @@
 ---
-import { getCollection } from 'astro:content';
-import BaseHead from '../components/BaseHead.astro';
-import Footer from '../components/Footer.astro';
-import FormattedDate from '../components/FormattedDate.astro';
-import Header from '../components/Header.astro';
-import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
+import PostList from '../components/PostList.astro';
+import { SITE_DESCRIPTION, SITE_TAGLINE, SITE_TITLE, TOPICS } from '../consts';
+import Page from '../layouts/Page.astro';
+import { allPosts } from '../lib/posts';
 import { url } from '../url';
 
-const posts = (await getCollection('blog')).sort(
-	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
-);
+const posts = await allPosts();
 ---
 
-<!doctype html>
-<html lang="en">
-	<head>
-		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
-	</head>
-	<body>
-		<Header />
-		<main>
-			<h1>Primitive Bytes</h1>
-			<p>
-				Every big jump in how software gets built came with a boring little file: the lockfile,
-				the Dockerfile, the manifest. AI agents don't have theirs yet.
-			</p>
-			<p>
-				This blog is about building them: small, versioned configs that describe one part of an
-				agent system, and tools that refuse to run when reality doesn't match. Short posts,
-				written while building in the open.
-			</p>
-			<h2>Posts</h2>
-			<ul>
-				{
-					posts.map((post) => (
-						<li>
-							<a href={url(`/blog/${post.id}/`)}>{post.data.title}</a>
-							{' · '}
-							<FormattedDate date={post.data.pubDate} />
-						</li>
-					))
-				}
-			</ul>
-		</main>
-		<Footer />
-	</body>
-</html>
+<Page title={SITE_TITLE} description={SITE_DESCRIPTION}>
+	<section class="hero wrap">
+		<p class="eyebrow">Data &amp; AI governance · Platform building</p>
+		<h1>{SITE_TAGLINE}</h1>
+		<p class="lede">
+			Governance usually lives in a policy document nobody reads. I write about moving it into
+			the platform: data contracts, access policies, gateways, and the small versioned configs
+			that tools can actually enforce.
+		</p>
+		<ul class="topics" aria-label="Topics">
+			{
+				TOPICS.map((t) => (
+					<li class="chip">{t}</li>
+				))
+			}
+		</ul>
+	</section>
+
+	<section class="latest wrap">
+		<div class="section-head">
+			<h2>Latest writing</h2>
+			<a href={url('/blog/')}>All posts →</a>
+		</div>
+		<PostList posts={posts.slice(0, 6)} />
+	</section>
+</Page>
+
+<style>
+	.hero {
+		padding-top: 6rem;
+		padding-bottom: 4rem;
+		position: relative;
+	}
+	.hero::before {
+		/* a faint grid of blocks behind the headline */
+		content: '';
+		position: absolute;
+		inset: 1.5rem 1.25rem auto auto;
+		width: min(340px, 45%);
+		height: 260px;
+		background-image:
+			linear-gradient(var(--rule) 1px, transparent 1px),
+			linear-gradient(90deg, var(--rule) 1px, transparent 1px);
+		background-size: 28px 28px;
+		mask-image: radial-gradient(closest-side, #000 40%, transparent);
+		-webkit-mask-image: radial-gradient(closest-side, #000 40%, transparent);
+		opacity: 0.8;
+		pointer-events: none;
+	}
+	.hero > * {
+		position: relative;
+	}
+	.eyebrow {
+		margin: 0 0 1.25rem;
+		color: var(--accent-ink);
+	}
+	h1 {
+		max-width: 17ch;
+		margin-bottom: 1.5rem;
+	}
+	.lede {
+		max-width: 58ch;
+		margin: 0;
+		color: var(--ink-2);
+		font-size: 1.2rem;
+		line-height: 1.6;
+	}
+	.topics {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 2rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.section-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 0.5rem;
+	}
+	.section-head h2 {
+		margin: 0;
+		font-size: 1.15rem;
+	}
+	.section-head a {
+		color: var(--ink-2);
+		font-size: 0.92rem;
+		font-weight: 500;
+		text-decoration: none;
+	}
+	.section-head a:hover {
+		color: var(--accent-ink);
+	}
+	@media (max-width: 640px) {
+		.hero {
+			padding-top: 3.5rem;
+			padding-bottom: 2.75rem;
+		}
+		.hero::before {
+			display: none;
+		}
+		.lede {
+			font-size: 1.08rem;
+		}
+	}
+</style>

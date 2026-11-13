@@ -1,0 +1,16 @@
+---
+// The mark: four blocks, one of them lit. Primitives, assembled.
+interface Props {
+	size?: number;
+}
+
+const { size = 22 } = Astro.props;
+---
+
+<svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" class="logo">
+	<rect width="32" height="32" rx="7" fill="var(--ink)"></rect>
+	<rect x="7" y="7" width="8" height="8" rx="1.5" fill="var(--paper)"></rect>
+	<rect x="17" y="7" width="8" height="8" rx="1.5" fill="var(--paper)" opacity=".45"></rect>
+	<rect x="7" y="17" width="8" height="8" rx="1.5" fill="var(--paper)" opacity=".45"></rect>
+	<rect x="17" y="17" width="8" height="8" rx="1.5" fill="var(--accent)"></rect>
+</svg>

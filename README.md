@@ -1,7 +1,7 @@
 # Primitive Bytes
 
-A blog about primitives for AI agents: small, versioned configs that describe one part of an
-agent system, and the tools that enforce them.
+A blog about data and AI governance, and building the platforms that make it real: data
+contracts, policies, gateways, and the small versioned configs that tools enforce.
 
 Live at <https://fatherbrian.github.io/primitive-bytes/>. Built with [Astro](https://astro.build)
 from its blog starter, and deployed to GitHub Pages on every push to `main`.

@@ -2,6 +2,7 @@
 title: 'Primitives for agents'
 description: 'Agents need what dependencies got from lockfiles: small, versioned configs that a tool enforces, not documents that a person reads.'
 pubDate: 'Nov 13 2026'
+tags: ['Agents & MCP', 'Platform building']
 ---
 
 Every big jump in how software gets built came with a boring little file.

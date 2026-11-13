@@ -1,24 +1,63 @@
 ---
-import Layout from '../layouts/BlogPost.astro';
+import { GITHUB_URL } from '../consts';
+import Page from '../layouts/Page.astro';
+import { url } from '../url';
 ---
 
-<Layout
+<Page
 	title="About"
-	description="What Primitive Bytes is about, and what I'm building."
-	pubDate={new Date('November 13 2026')}
+	description="What Primitive Bytes is about: data and AI governance, and building the platforms that make it real."
 >
-	<p>
-		Primitive Bytes is about the small, versioned configs that make AI agents safer and easier
-		to build with: lockfiles for tools, contracts for servers, manifests for agents. Each one is
-		owned by someone, reviewed like code, and enforced by a tool rather than read by a person.
-	</p>
-	<p>
-		I'm building these in the open. The first is <code>reef lock</code>, which pins every MCP
-		tool's description and schemas so a server can't quietly change what your agent reads. It
-		lives in <a href="https://github.com/FatherBrian/trellis/tree/main/reef">Reef</a>, an
-		open-source MCP gateway.
-	</p>
-	<p>
-		Find me on <a href="https://github.com/FatherBrian">GitHub</a>.
-	</p>
-</Layout>
+	<article class="wrap">
+		<header class="head">
+			<p class="eyebrow">About</p>
+			<h1>Governance you can run, not just read.</h1>
+		</header>
+		<div class="prose">
+			<p>
+				Primitive Bytes is about governing data and AI, and about building the platforms that make
+				that governance real. Most organisations have the policy written down. Far fewer can
+				enforce it at the moment data is read, a model is called or an agent acts, or show
+				afterwards who allowed what.
+			</p>
+			<p>
+				The running theme is <strong>primitives</strong>: small, versioned configs that describe
+				one thing (a data contract, a tool lockfile, an agent manifest), are owned by someone,
+				get reviewed like code, and are enforced by a tool rather than read by a person.
+			</p>
+			<p>Expect posts on:</p>
+			<ul>
+				<li>data governance: contracts, catalogs, classification and access</li>
+				<li>AI governance: what agents and models may touch, for whom, and the evidence after</li>
+				<li>platform building: gateways, policy engines, and making the secure path the easy one</li>
+				<li>agents and MCP: the protocols agents use, and where they fall short</li>
+			</ul>
+			<p>
+				I build in the open as I go. The first piece is <code>reef lock</code>, which pins every
+				MCP tool's description and schemas so a server can't quietly change what an agent reads.
+				It's in <a href="https://github.com/FatherBrian/trellis/tree/main/reef">Reef</a>, an
+				open-source MCP gateway.
+			</p>
+			<p>
+				Find me on <a href={GITHUB_URL}>GitHub</a>, or follow along with the
+				<a href={url('/rss.xml')}>RSS feed</a>.
+			</p>
+		</div>
+	</article>
+</Page>
+
+<style>
+	.head {
+		max-width: var(--measure);
+		margin: 4.5rem auto 2.5rem;
+	}
+	.head .eyebrow {
+		margin: 0 0 1rem;
+		color: var(--accent-ink);
+	}
+	@media (max-width: 640px) {
+		.head {
+			margin-top: 2.75rem;
+		}
+	}
+</style>

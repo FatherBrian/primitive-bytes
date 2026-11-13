@@ -9,28 +9,34 @@ export default defineConfig({
 	site: 'https://fatherbrian.github.io',
 	base: '/primitive-bytes',
 	integrations: [mdx(), sitemap()],
+	markdown: {
+		shikiConfig: {
+			// Light by default; global.css switches code blocks to the dark theme.
+			themes: { light: 'github-light', dark: 'github-dark-dimmed' },
+		},
+	},
 	fonts: [
 		{
-			provider: fontProviders.local(),
-			name: 'Atkinson',
-			cssVariable: '--font-atkinson',
-			fallbacks: ['sans-serif'],
-			options: {
-				variants: [
-					{
-						src: ['./src/assets/fonts/atkinson-regular.woff'],
-						weight: 400,
-						style: 'normal',
-						display: 'swap',
-					},
-					{
-						src: ['./src/assets/fonts/atkinson-bold.woff'],
-						weight: 700,
-						style: 'normal',
-						display: 'swap',
-					},
-				],
-			},
+			provider: fontProviders.google(),
+			name: 'Space Grotesk',
+			cssVariable: '--font-display',
+			weights: [500, 600, 700],
+			fallbacks: ['system-ui', 'sans-serif'],
+		},
+		{
+			provider: fontProviders.google(),
+			name: 'Inter',
+			cssVariable: '--font-body',
+			weights: [400, 500, 600],
+			styles: ['normal', 'italic'],
+			fallbacks: ['system-ui', 'sans-serif'],
+		},
+		{
+			provider: fontProviders.google(),
+			name: 'JetBrains Mono',
+			cssVariable: '--font-mono',
+			weights: [400, 500],
+			fallbacks: ['ui-monospace', 'monospace'],
 		},
 	],
 });
