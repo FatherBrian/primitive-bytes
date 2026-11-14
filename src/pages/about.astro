@@ -27,66 +27,53 @@ const LINKEDIN_URL = 'https://www.linkedin.com/in/brian-fotheringham';
 				versioned config files, and systems that fail closed.
 			</p>
 
-			<h2>Now</h2>
+			<h2>Work</h2>
 			<p>
-				<strong>Staff Data &amp; Information Architect, GE Aerospace</strong> (2024 to present). I'm the
-				second most senior architect on the Data Fabric team, which is modernizing how the company
-				stores, governs and shares data for both people and AI, across commercial AWS and GovCloud.
-				Most of my job is technical direction: setting architecture and standards and leading the
-				teams that deliver them.
+				I'm a data and AI architect at GE Aerospace, where I've worked since 2020 across data
+				engineering, data platforms, and architecture. Most of my work now is technical direction:
+				setting architecture and standards for data and AI platforms in a regulated environment, and
+				leading the teams that build them.
 			</p>
-			<p>Some of what I've built there:</p>
+			<p>The kinds of things I've built and used:</p>
 			<ul>
 				<li>
-					<strong>A commercial lakehouse on Apache Iceberg.</strong> Data from a higher-regulated zone
-					now lands once, on S3 with Lake Formation and Glue, and Palantir, Databricks and AWS all read
-					that one copy instead of making their own.
+					<strong>Lakehouses on open table formats.</strong> Apache Iceberg on S3 with Lake Formation
+					and Glue, designed so several platforms read one copy of the data instead of each making
+					their own. Earlier, large data lakes on Spark, Glue, EMR and Apache Hudi.
 				</li>
 				<li>
-					<strong>The Databricks platform.</strong> I took it from a 100-day trial to an enterprise
-					platform, with workspaces and Unity Catalog organized per data domain so each domain owns its
-					data, and data produced in Databricks shared back to the central catalog for every other
-					platform.
+					<strong>Governed analytics platforms.</strong> Databricks and Unity Catalog organized by data
+					domain, so each domain owns its data, with catalog federation so data stays usable across
+					platforms.
 				</li>
 				<li>
-					<strong>A cloud-native ingestion service.</strong> A config-driven, self-service control plane
-					on AWS primitives (ECS and Batch) that replaced a licensed ingestion product at a fraction of
-					the cost. It now handles hundreds of sources, structured and unstructured.
+					<strong>Ingestion on cloud primitives.</strong> Config-driven, self-service ingestion built on
+					AWS ECS and Batch, handling structured and unstructured sources, in place of a licensed
+					product.
 				</li>
 				<li>
-					<strong>Passport, our data contract primitive.</strong> Every dataset declares its owner,
-					schema, SLAs, quality checks and regulatory tags, and the contract is enforced in CI/CD.
-					Those contracts became the attributes our access control decides on.
+					<strong>Data contracts.</strong> Contracts on the Open Data Contract Standard that declare a
+					dataset's owner, schema, SLAs, quality checks and classification, enforced in CI/CD.
 				</li>
 				<li>
-					<strong>Enterprise attribute-based access control.</strong> I co-designed the policy
-					framework, the resource store (built from Passport contracts), and enforcement through MCP
-					servers, so access follows written policy instead of one-off grants.
+					<strong>Attribute-based access control.</strong> Policy frameworks where access follows
+					written policy and data attributes instead of one-off grants, with identity from Microsoft
+					Entra ID.
 				</li>
 				<li>
-					<strong>MCP Factory.</strong> I lead the enterprise MCP program: a shared package with
-					identity, policy enforcement, audit and observability built in, a team of forward-deployed
-					engineers building servers to that standard, and the security review standards our cyber
-					team now applies to every MCP.
+					<strong>MCP servers and gateways for agents.</strong> A shared MCP package with identity,
+					policy enforcement, audit and observability built in, plus security review standards for
+					MCP servers.
 				</li>
 				<li>
-					<strong>Agent publishing platform.</strong> I helped design and build the platform where
-					teams publish and run agents, and I'm leading the standard for how agents carry ownership,
-					audit and change management.
+					<strong>Observability for agent tooling.</strong> OpenTelemetry streamed through Kinesis
+					Firehose into Iceberg and queried with DuckDB.
+				</li>
+				<li>
+					<strong>Agent platforms.</strong> Publishing and running agents on AWS Bedrock AgentCore and
+					Strands, with ownership, audit and change management built in.
 				</li>
 			</ul>
-
-			<h2>Before that</h2>
-			<p>
-				<strong>Senior Technical Product Manager, GE Aerospace</strong> (2022 to 2024). I owned a 100
-				TB data lake on Spark, Glue and EMR serving more than 1,000 analysts and engineers, and built
-				an event plane that let downstream teams act on new data as it landed.
-			</p>
-			<p>
-				<strong>Digital Technology Leadership Program, GE Aviation</strong> (2020 to 2022). I
-				architected a Redshift warehouse for an Italian subsidiary under Italian and US compliance
-				requirements, and built a convolutional neural network for engine test analytics.
-			</p>
 
 			<h2>Open source and writing</h2>
 			<ul>
