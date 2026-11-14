@@ -2,19 +2,119 @@
 import { GITHUB_URL } from '../consts';
 import Page from '../layouts/Page.astro';
 import { url } from '../url';
+
+const LINKEDIN_URL = 'https://www.linkedin.com/in/brian-fotheringham';
 ---
 
-<Page title="About" description="I like data and AI and post about them sometimes, along with random things I build.">
+<Page
+	title="About"
+	description="Brian Fotheringham: data and AI platform architect at GE Aerospace, working on governed data for people and agents."
+>
 	<article class="wrap">
 		<header class="head">
 			<p class="eyebrow">About</p>
 			<h1>About</h1>
 		</header>
 		<div class="prose">
-			<p>I work on data and AI governance and the platforms around them.</p>
-			<p>I like data and AI and post about them sometimes, along with random things I build.</p>
 			<p>
-				<a href={GITHUB_URL}>GitHub</a> · <a href={url('/rss.xml')}>RSS</a>
+				I'm Brian Fotheringham. I'm a data and AI platform architect at GE Aerospace, based in
+				Cleveland. I work on the part of the stack where data meets AI: getting data to people and
+				agents quickly, while keeping clear who owns it, who can use it, and why.
+			</p>
+			<p>
+				My working style is simple. Set a standard, enforce it with tooling instead of memory, roll it
+				out crawl-walk-run, and change it when reality pushes back. I like cloud primitives, small
+				versioned config files, and systems that fail closed.
+			</p>
+
+			<h2>Now</h2>
+			<p>
+				<strong>Staff Data &amp; Information Architect, GE Aerospace</strong> (2024 to present). I'm the
+				second most senior architect on the Data Fabric team, which is modernizing how the company
+				stores, governs and shares data for both people and AI, across commercial AWS and GovCloud.
+				Most of my job is technical direction: setting architecture and standards and leading the
+				teams that deliver them.
+			</p>
+			<p>Some of what I've built there:</p>
+			<ul>
+				<li>
+					<strong>A commercial lakehouse on Apache Iceberg.</strong> Data from a higher-regulated zone
+					now lands once, on S3 with Lake Formation and Glue, and Palantir, Databricks and AWS all read
+					that one copy instead of making their own.
+				</li>
+				<li>
+					<strong>The Databricks platform.</strong> I took it from a 100-day trial to an enterprise
+					platform, with workspaces and Unity Catalog organized per data domain so each domain owns its
+					data, and data produced in Databricks shared back to the central catalog for every other
+					platform.
+				</li>
+				<li>
+					<strong>A cloud-native ingestion service.</strong> A config-driven, self-service control plane
+					on AWS primitives (ECS and Batch) that replaced a licensed ingestion product at a fraction of
+					the cost. It now handles hundreds of sources, structured and unstructured.
+				</li>
+				<li>
+					<strong>Passport, our data contract primitive.</strong> Every dataset declares its owner,
+					schema, SLAs, quality checks and regulatory tags, and the contract is enforced in CI/CD.
+					Those contracts became the attributes our access control decides on.
+				</li>
+				<li>
+					<strong>Enterprise attribute-based access control.</strong> I co-designed the policy
+					framework, the resource store (built from Passport contracts), and enforcement through MCP
+					servers, so access follows written policy instead of one-off grants.
+				</li>
+				<li>
+					<strong>MCP Factory.</strong> I lead the enterprise MCP program: a shared package with
+					identity, policy enforcement, audit and observability built in, a team of forward-deployed
+					engineers building servers to that standard, and the security review standards our cyber
+					team now applies to every MCP.
+				</li>
+				<li>
+					<strong>Agent publishing platform.</strong> I helped design and build the platform where
+					teams publish and run agents, and I'm leading the standard for how agents carry ownership,
+					audit and change management.
+				</li>
+			</ul>
+
+			<h2>Before that</h2>
+			<p>
+				<strong>Senior Technical Product Manager, GE Aerospace</strong> (2022 to 2024). I owned a 100
+				TB data lake on Spark, Glue and EMR serving more than 1,000 analysts and engineers, and built
+				an event plane that let downstream teams act on new data as it landed.
+			</p>
+			<p>
+				<strong>Digital Technology Leadership Program, GE Aviation</strong> (2020 to 2022). I
+				architected a Redshift warehouse for an Italian subsidiary under Italian and US compliance
+				requirements, and built a convolutional neural network for engine test analytics.
+			</p>
+
+			<h2>Open source and writing</h2>
+			<ul>
+				<li>
+					<a href="https://github.com/FatherBrian/trellis"><strong>Trellis and Reef</strong></a>:
+					open-source tools that let an AI agent act for a person only within a task's scope. Every
+					tool call passes Cedar policy checks and lands in a hash-chained audit ledger.
+				</li>
+				<li>
+					<a href={url('/blog/primitives-for-agents/')}><strong>Primitives for agents</strong></a>:
+					why agents need small, versioned, tool-enforced config files, and the first one,
+					<code>reef.lock</code>, which pins MCP tool definitions so a changed tool can't slip through.
+				</li>
+				<li>
+					<a href={url('/lab/')}><strong>The Lab</strong></a>: live demos of the ideas I write about.
+				</li>
+			</ul>
+
+			<h2>Education</h2>
+			<ul>
+				<li>M.S. Computer Science, Artificial Intelligence, Georgia Institute of Technology (2026)</li>
+				<li>B.S. Software Engineering and B.S. Information Systems, Miami University (2020)</li>
+			</ul>
+
+			<h2>Elsewhere</h2>
+			<p>
+				<a href={GITHUB_URL}>GitHub</a> · <a href={LINKEDIN_URL}>LinkedIn</a> ·
+				<a href={url('/rss.xml')}>RSS</a>
 			</p>
 		</div>
 	</article>
