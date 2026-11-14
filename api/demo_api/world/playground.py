@@ -35,6 +35,8 @@ SYSTEM = (
 )
 CUSTOM = "custom"
 MAX_QUESTION = 280
+MAX_HISTORY = 8  # earlier messages a chat may send: four questions and their answers
+MAX_ANSWER = 1500  # characters kept from each earlier answer
 
 
 @dataclass(frozen=True)
@@ -188,6 +190,33 @@ def question(raw: Any) -> str:
     return text
 
 
+def history(raw: Any) -> list[dict[str, str]]:
+    """A chat's earlier turns: user and assistant text, alternating, oldest first.
+
+    Only text goes back to the model, never tool calls or results, and only the last few
+    turns. Questions get the same checks as a new one; answers are trimmed.
+    """
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) % 2:
+        raise ConfigError("history must be pairs of question and answer")
+    raw = raw[-MAX_HISTORY:]
+    out: list[dict[str, str]] = []
+    for i, turn in enumerate(raw):
+        role = "user" if i % 2 == 0 else "assistant"
+        if not isinstance(turn, dict) or turn.get("role") != role:
+            raise ConfigError("history must alternate question, answer")
+        if role == "user":
+            text = question(turn.get("text"))
+        else:
+            raw_text = turn.get("text")
+            if not isinstance(raw_text, str):
+                raise ConfigError("an answer in history must be text")
+            text = raw_text.strip()[:MAX_ANSWER] or "(no answer)"
+        out.append({"role": role, "text": text})
+    return out
+
+
 def _error(text: str) -> types.CallToolResult:
     return types.CallToolResult(content=[types.TextContent(type="text", text=text)], is_error=True)
 
@@ -222,7 +251,9 @@ class PlaygroundSetup(Setup):
 
 
 @asynccontextmanager
-async def playground(world: World, config: Config) -> AsyncIterator[Setup]:
+async def playground(
+    world: World, config: Config, earlier: list[dict[str, str]] | None = None
+) -> AsyncIterator[Setup]:
     label, asked = config.question()
     tag = secrets.token_hex(8)
     describe = {"summary": config.summary(), "config": config.as_dict(), "prompt": label}
@@ -273,6 +304,7 @@ async def playground(world: World, config: Config) -> AsyncIterator[Setup]:
                                 trellis=world.trellis)
         setup.grant_id = issued.grant.id
     setup.tag = tag
+    setup.history = list(earlier or [])
     setup.world = world
     setup.connected = config.servers
     yield setup

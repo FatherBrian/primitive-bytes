@@ -1,0 +1,862 @@
+---
+// Chat with Kelpworks's agent: the playground's backend behind a chat. Each message is one
+// live run; MCP Apps views render inline in the answer, and the full trace (tool calls,
+// results, ledger, what each server received) folds away under it.
+import Page from '../../layouts/Page.astro';
+import { url } from '../../url';
+
+const api = import.meta.env.PUBLIC_DEMO_API ?? '';
+---
+
+<Page
+	title="Chat with an agent"
+	description="Chat with an agent inside Kelpworks, a fake company with real MCP servers. Change what it can reach, put Reef in front of it, and watch every tool call, view and ledger entry."
+>
+	<section class="chat wrap" data-chat data-api={api}>
+		<header class="bar">
+			<div class="title">
+				<a class="back" href={url('/lab/')}>← Lab</a>
+				<h1>Kelpworks agent</h1>
+			</div>
+			<div class="bar-actions">
+				<button type="button" class="pill" data-open-setup aria-expanded="false" aria-controls="setup">
+					<span class="dot" data-dot></span><span data-setup-label>Setup</span>
+				</button>
+				<button type="button" class="ghost" data-new hidden>New chat</button>
+			</div>
+		</header>
+
+		<div class="setup" id="setup" data-setup hidden>
+			<div class="setup-grid">
+				<fieldset>
+					<legend>Servers it can reach</legend>
+					<div class="checks" data-servers></div>
+				</fieldset>
+				<fieldset>
+					<legend>Gateway</legend>
+					<div class="seg">
+						<label><input type="radio" name="gateway" value="direct" /> Direct</label>
+						<label><input type="radio" name="gateway" value="reef" /> Through Reef</label>
+					</div>
+					<div data-reef-opts>
+						<label class="row">
+							<span>Grant</span>
+							<select name="task" data-task></select>
+						</label>
+						<p class="hint" data-task-blurb></p>
+						<label class="check"><input type="checkbox" name="lock" /> Pin tools with <code>reef.lock</code></label>
+					</div>
+				</fieldset>
+			</div>
+			<p class="hint">
+				Changes apply to your next message. For side-by-side runs, use the
+				<a href={url('/lab/playground/')}>builder</a>.
+			</p>
+		</div>
+
+		<div class="thread" data-thread aria-live="polite">
+			<div class="empty" data-empty>
+				<p class="intro">
+					This agent works at <a href={url('/lab/explore/')}>Kelpworks</a>, a made-up company with
+					real MCP servers: a wiki, support tickets, a CRM, HR, mail, and a third-party plugin.
+					Some of those servers misbehave. Ask it something, then change its setup and ask again.
+				</p>
+				<p class="muted" data-status>{api ? 'Loading…' : 'The chat needs the demo server, which isn’t set up here.'}</p>
+				<h2 class="label" data-scen-label hidden>Scenarios</h2>
+				<div class="scenarios" data-scenarios></div>
+				<h2 class="label" data-sugg-label hidden>Or just ask</h2>
+				<div class="chips" data-suggestions></div>
+			</div>
+		</div>
+
+		<form class="composer" data-composer>
+			<div class="follow chips" data-follow></div>
+			<div class="box">
+				<textarea name="text" rows="1" placeholder="Ask Kelpworks's agent…" data-input disabled></textarea>
+				<button type="submit" class="send" data-send disabled aria-label="Send">↑</button>
+			</div>
+			<p class="foot">
+				<span data-count></span>
+				Claude Haiku 5.5 on fake data. Your own questions get a share link but never appear in the
+				public feed; don't type anything personal.
+			</p>
+		</form>
+	</section>
+</Page>
+
+<script>
+	import { mountView, configureViews } from '../../components/demo/views';
+	import { runLink, showEvent, streamRun, type Ev } from '../../components/demo/transcript';
+
+	type J = Record<string, any>;
+	const root = document.querySelector<HTMLElement>('[data-chat]')!;
+	const API = root.dataset.api ?? '';
+	configureViews(API);
+	const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+
+	const thread = $('[data-thread]');
+	const empty = $('[data-empty]');
+	const input = $<HTMLTextAreaElement>('[data-input]');
+	const send = $<HTMLButtonElement>('[data-send]');
+	const follow = $('[data-follow]');
+	const setupPanel = $('[data-setup]');
+	const setupButton = $<HTMLButtonElement>('[data-open-setup]');
+	const newButton = $<HTMLButtonElement>('[data-new]');
+
+	let world: J = {};
+	let maxQ = 280;
+	let keepHistory = 0; // how many earlier messages the server takes (0: each message starts fresh)
+	let running = false;
+	let lastAsk: { prompt: string; text: string } | null = null;
+	const history: { role: 'user' | 'assistant'; text: string }[] = [];
+	let config: J = { servers: ['docs', 'comms'], gateway: 'reef', task: 'everything', lock: true };
+
+	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | false)[]) {
+		const el = document.createElement(tag);
+		for (const [k, v] of Object.entries(attrs)) {
+			if (v === undefined || v === null || v === false) continue;
+			if (k === 'class') el.className = v;
+			else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+			else el.setAttribute(k, v === true ? '' : String(v));
+		}
+		for (const kid of kids) if (kid !== null && kid !== false) el.append(kid);
+		return el;
+	}
+
+	// ---- setup ---------------------------------------------------------------------------
+
+	function setupLabel(c: J) {
+		const servers = c.servers.join(', ') || 'no servers';
+		if (c.gateway === 'direct') return `${servers} · direct`;
+		const task = world.tasks?.find((t: J) => t.id === c.task);
+		return `${servers} · Reef${task ? ` (${task.label})` : ''}${c.lock ? ' · lock' : ''}`;
+	}
+
+	function drawSetup() {
+		$('[data-setup-label]').textContent = setupLabel(config);
+		$('[data-dot]').className = `dot ${config.gateway === 'reef' ? (config.lock ? 'safe' : 'part') : 'open'}`;
+		for (const el of Array.from(setupPanel.querySelectorAll<HTMLInputElement>('input'))) {
+			if (el.name === 'servers') el.checked = config.servers.includes(el.value);
+			if (el.name === 'gateway') el.checked = el.value === config.gateway;
+			if (el.name === 'lock') el.checked = !!config.lock;
+		}
+		const sel = $<HTMLSelectElement>('[data-task]');
+		if (config.task) sel.value = config.task;
+		$('[data-reef-opts]').hidden = config.gateway !== 'reef';
+		const task = world.tasks?.find((t: J) => t.id === sel.value);
+		$('[data-task-blurb]').textContent = task ? `${task.blurb} Scope: ${task.scope.join(', ')}; actions: ${task.actions.join(', ')}.` : '';
+	}
+
+	function readSetup() {
+		const pick = (name: string) => Array.from(setupPanel.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`));
+		const gateway = pick('gateway').find((e) => e.checked)?.value === 'direct' ? 'direct' : 'reef';
+		config = {
+			servers: pick('servers').filter((e) => e.checked).map((e) => e.value),
+			gateway,
+			task: gateway === 'reef' ? $<HTMLSelectElement>('[data-task]').value || 'everything' : null,
+			lock: gateway === 'reef' && pick('lock')[0]?.checked,
+		};
+		drawSetup();
+		drawFollowUps();
+	}
+
+	function buildSetup() {
+		$('[data-servers]').replaceChildren(
+			...world.servers.map((s: J) =>
+				h('label', { class: 'check', title: s.about ?? '' }, h('input', { type: 'checkbox', name: 'servers', value: s.name }), ` ${s.title ?? s.name}`),
+			),
+		);
+		$('[data-task]').replaceChildren(...world.tasks.map((t: J) => h('option', { value: t.id }, t.label)));
+		setupPanel.addEventListener('change', readSetup);
+		drawSetup();
+	}
+
+	setupButton.addEventListener('click', () => {
+		setupPanel.hidden = !setupPanel.hidden;
+		setupButton.setAttribute('aria-expanded', String(!setupPanel.hidden));
+	});
+
+	// ---- suggestions ---------------------------------------------------------------------
+
+	function chip(text: string, onclick: () => void, cls = 'chip') {
+		return h('button', { type: 'button', class: cls, onclick }, text);
+	}
+
+	function drawStart() {
+		const presets = (world.presets ?? []).filter((p: J) => !p.compare);
+		$('[data-scen-label]').hidden = !presets.length;
+		$('[data-scenarios]').replaceChildren(
+			...presets.slice(0, 6).map((p: J) =>
+				h(
+					'button',
+					{ type: 'button', class: 'scenario', onclick: () => runPreset(p) },
+					h('strong', {}, p.label),
+					h('span', {}, p.blurb),
+				),
+			),
+		);
+		$('[data-sugg-label]').hidden = !world.prompts?.length;
+		$('[data-suggestions]').replaceChildren(...(world.prompts ?? []).map((p: J) => chip(p.text, () => ask({ prompt: p.id, text: p.text }))));
+	}
+
+	// After an answer: change one thing and ask again, or ask something else.
+	function drawFollowUps() {
+		follow.replaceChildren();
+		if (running || !lastAsk) return;
+		const again = (label: string, next: J) =>
+			chip(label, () => {
+				config = { ...config, ...next };
+				drawSetup();
+				ask(lastAsk!);
+			}, 'chip alt');
+		const out: HTMLElement[] = [];
+		if (config.gateway === 'direct') out.push(again('Ask again through Reef with the lock', { gateway: 'reef', task: 'everything', lock: true }));
+		else {
+			out.push(again(config.lock ? 'Ask again without the lock' : 'Ask again with the lock', { lock: !config.lock }));
+			out.push(again('Ask again with no gateway', { gateway: 'direct', task: null, lock: false }));
+		}
+		const asked = new Set(history.filter((m) => m.role === 'user').map((m) => m.text));
+		for (const p of (world.prompts ?? []).filter((p: J) => !asked.has(p.text)).slice(0, 2)) {
+			out.push(chip(p.label, () => ask({ prompt: p.id, text: p.text })));
+		}
+		follow.replaceChildren(...out);
+	}
+
+	function runPreset(p: J) {
+		const { prompt, text, ...c } = p.config;
+		config = { ...config, ...c };
+		drawSetup();
+		const known = world.prompts.find((x: J) => x.id === prompt);
+		ask({ prompt, text: known?.text ?? text ?? '' }, p.label);
+	}
+
+	// ---- messages ------------------------------------------------------------------------
+
+	function scrollDown() {
+		requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+	}
+
+	function userBubble(text: string, note?: string) {
+		thread.append(
+			h('div', { class: 'msg user' }, note ? h('p', { class: 'msg-note' }, note) : null, h('div', { class: 'bubble' }, text), h('p', { class: 'msg-setup' }, setupLabel(config))),
+		);
+	}
+
+	function agentMessage() {
+		const body = h('div', { class: 'body' });
+		const status = h('p', { class: 'status' }, h('span', { class: 'spin' }), 'Starting…');
+		const steps = h('ol', { class: 'steps' });
+		const summary = h('summary', {}, 'What happened');
+		const trace = h('details', { class: 'trace' }, summary, steps);
+		const foot = h('p', { class: 'msg-foot' });
+		const el = h('div', { class: 'msg agent' }, body, status, trace, foot);
+		thread.append(el);
+		return { el, body, status, steps, summary, trace, foot };
+	}
+
+	async function ask(q: { prompt: string; text: string }, note?: string) {
+		if (running || !q.text) return;
+		if (!config.servers.length) {
+			setupPanel.hidden = false;
+			return;
+		}
+		running = true;
+		lastAsk = q;
+		empty.hidden = true;
+		newButton.hidden = false;
+		follow.replaceChildren();
+		lock(true);
+		userBubble(q.text, note);
+		const m = agentMessage();
+		scrollDown();
+
+		const earlier = keepHistory ? history.slice(-keepHistory) : [];
+		const body: J = {
+			scenario: 'playground',
+			config: { ...config, prompt: q.prompt, ...(q.prompt === 'custom' ? { text: q.text } : {}) },
+			...(earlier.length ? { history: earlier } : {}),
+		};
+		let answer = '';
+		let calls = 0;
+		let blocked = 0;
+		let runId = '';
+		let cost = 0;
+		const say = (s: string) => (m.status.lastChild!.textContent = s);
+		try {
+			await streamRun(API, body, (e: Ev) => {
+				switch (e.type) {
+					case 'run':
+						runId = e.id;
+						return;
+					case 'usage':
+						return;
+					case 'tools':
+						say(`Connected · ${e.tools.length} tool${e.tools.length === 1 ? '' : 's'} visible`);
+						break;
+					case 'thinking':
+						say('Thinking…');
+						break;
+					case 'tool_call':
+						calls += 1;
+						say(`Calling ${e.name}…`);
+						break;
+					case 'text': {
+						answer += (answer ? '\n\n' : '') + e.text;
+						m.body.append(h('div', { class: 'bubble' }, e.text));
+						scrollDown();
+						break;
+					}
+					case 'tool_result':
+						if (e.is_error) blocked += 1;
+						if (e.ui && e.data) {
+							// MCP Apps: the tool's view renders right in the answer.
+							const slot = h('div', { class: 'view' });
+							m.body.append(slot);
+							void mountView(slot, e.ui, e.input ?? {}, e.data);
+							scrollDown();
+						}
+						showEvent(m.steps, { ...e, ui: undefined });
+						return;
+					case 'error':
+						m.body.append(h('div', { class: 'bubble err' }, e.message));
+						break;
+					case 'done':
+						cost = e.cost_usd ?? 0;
+						break;
+				}
+				showEvent(m.steps, e);
+			});
+		} catch (err) {
+			m.body.append(h('div', { class: 'bubble err' }, (err as Error).message));
+		}
+		m.status.remove();
+		const bits = [`${calls} tool call${calls === 1 ? '' : 's'}`];
+		if (blocked) bits.push(`${blocked} refused or failed`);
+		m.summary.textContent = `What happened · ${bits.join(' · ')}`;
+		if (!m.steps.children.length) m.trace.remove();
+		if (runId && answer) {
+			const link = runLink(runId);
+			const copy = h('button', { type: 'button', class: 'link' }, 'Copy link');
+			copy.addEventListener('click', () => navigator.clipboard?.writeText(link).then(() => (copy.textContent = 'Copied')));
+			m.foot.append(h('a', { href: link }, 'Replay'), ' · ', copy, cost ? ` · $${cost.toFixed(4)}` : '');
+		}
+		if (answer) history.push({ role: 'user', text: q.text }, { role: 'assistant', text: answer });
+		running = false;
+		lock(false);
+		drawFollowUps();
+		scrollDown();
+		input.focus();
+	}
+
+	function lock(on: boolean) {
+		input.disabled = on;
+		send.disabled = on || !input.value.trim();
+	}
+
+	// ---- composer ------------------------------------------------------------------------
+
+	function grow() {
+		input.style.height = 'auto';
+		input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+		const n = input.value.length;
+		$('[data-count]').textContent = n > maxQ * 0.7 ? `${n}/${maxQ} ·` : '';
+		send.disabled = running || !input.value.trim();
+	}
+	input.addEventListener('input', grow);
+	input.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+			e.preventDefault();
+			$<HTMLFormElement>('[data-composer]').requestSubmit();
+		}
+	});
+	$<HTMLFormElement>('[data-composer]').addEventListener('submit', (e) => {
+		e.preventDefault();
+		const text = input.value.trim();
+		if (!text || running) return;
+		input.value = '';
+		grow();
+		ask({ prompt: 'custom', text });
+	});
+
+	newButton.addEventListener('click', () => {
+		if (running) return;
+		history.length = 0;
+		lastAsk = null;
+		thread.replaceChildren(empty);
+		empty.hidden = false;
+		newButton.hidden = true;
+		follow.replaceChildren();
+	});
+
+	// ---- start ---------------------------------------------------------------------------
+
+	async function start() {
+		if (!API) return;
+		try {
+			const [w, health] = await Promise.all([
+				fetch(`${API}/api/world`).then((r) => r.json()),
+				fetch(`${API}/health`).then((r) => r.json()).catch(() => ({})),
+			]);
+			world = w;
+			maxQ = w.max_question ?? 280;
+			input.maxLength = maxQ;
+			keepHistory = health.chat?.history ?? 0;
+			if (health.live === false) {
+				$('[data-status]').textContent = 'Live runs are paused right now. You can still look around.';
+			} else {
+				$('[data-status]').textContent = keepHistory
+					? ''
+					: 'Each message starts a fresh run, so the agent won’t remember earlier answers.';
+				input.disabled = false;
+			}
+			$('[data-status]').hidden = !$('[data-status]').textContent;
+			buildSetup();
+			drawStart();
+		} catch {
+			$('[data-status]').textContent = 'Couldn’t reach the demo server. Try again in a minute.';
+		}
+	}
+	start();
+</script>
+
+<style is:global>
+	.wrap.chat {
+		max-width: 820px;
+		display: flex;
+		flex-direction: column;
+		min-height: calc(100vh - 8rem);
+	}
+	.chat .bar {
+		position: sticky;
+		top: 0;
+		z-index: 5;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 1rem 0 0.75rem;
+		background: var(--paper);
+		border-bottom: 1px solid var(--rule);
+	}
+	.chat .title {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+		min-width: 0;
+	}
+	.chat .title h1 {
+		margin: 0;
+		font-size: 1.15rem;
+	}
+	.chat .back {
+		font-size: 0.85rem;
+		color: var(--ink-3);
+		text-decoration: none;
+	}
+	.chat .bar-actions {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		min-width: 0;
+	}
+	.chat .pill,
+	.chat .ghost {
+		font: inherit;
+		font-size: 0.8rem;
+		border: 1px solid var(--rule);
+		background: var(--paper-2);
+		color: var(--ink);
+		border-radius: 999px;
+		padding: 0.35rem 0.75rem;
+		cursor: pointer;
+		max-width: 52vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.chat .ghost {
+		background: none;
+		color: var(--ink-2);
+	}
+	.chat .dot {
+		display: inline-block;
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		margin-right: 0.4rem;
+		background: var(--ink-3);
+		vertical-align: 0.05em;
+	}
+	.chat .dot.safe {
+		background: #2e9a5a;
+	}
+	.chat .dot.part {
+		background: #b8860b;
+	}
+	.chat .dot.open {
+		background: #d64541;
+	}
+
+	.chat .setup {
+		margin: 0.75rem 0 0;
+		padding: 1rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper-2);
+	}
+	.chat .setup-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+	.chat fieldset {
+		border: 0;
+		margin: 0;
+		padding: 0;
+		min-width: 0;
+	}
+	.chat legend {
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-3);
+		margin-bottom: 0.5rem;
+	}
+	.chat .checks {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem 1rem;
+	}
+	.chat .check,
+	.chat .seg label {
+		font-size: 0.9rem;
+		cursor: pointer;
+	}
+	.chat .seg {
+		display: flex;
+		gap: 1rem;
+		margin-bottom: 0.6rem;
+	}
+	.chat .row {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		font-size: 0.9rem;
+	}
+	.chat select {
+		font: inherit;
+		font-size: 0.9rem;
+		padding: 0.25rem 0.4rem;
+		border-radius: 6px;
+		border: 1px solid var(--rule);
+		background: var(--paper);
+		color: var(--ink);
+	}
+	.chat .hint,
+	.chat .muted {
+		font-size: 0.8rem;
+		color: var(--ink-3);
+		margin: 0.5rem 0;
+	}
+
+	.chat .thread {
+		flex: 1;
+		padding: 1.5rem 0 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+	.chat .intro {
+		color: var(--ink-2);
+		margin: 0 0 1rem;
+	}
+	.chat .label {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--ink-3);
+		margin: 1.5rem 0 0.6rem;
+	}
+	.chat .scenarios {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+		gap: 0.6rem;
+	}
+	.chat .scenario {
+		font: inherit;
+		text-align: left;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.8rem 0.9rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper-2);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.chat .scenario:hover,
+	.chat .chip:hover {
+		border-color: var(--accent);
+	}
+	.chat .scenario strong {
+		font-size: 0.9rem;
+	}
+	.chat .scenario span {
+		font-size: 0.8rem;
+		color: var(--ink-2);
+	}
+	.chat .chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.chat .chip {
+		font: inherit;
+		font-size: 0.82rem;
+		text-align: left;
+		padding: 0.4rem 0.75rem;
+		border-radius: 999px;
+		border: 1px solid var(--rule);
+		background: var(--paper);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.chat .chip.alt {
+		background: var(--accent-wash);
+		border-color: transparent;
+		color: var(--accent-ink);
+	}
+
+	.chat .msg {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		animation: chat-in 0.2s ease;
+	}
+	.chat .msg.user {
+		align-items: flex-end;
+	}
+	.chat .msg .bubble {
+		max-width: 88%;
+		padding: 0.65rem 0.9rem;
+		border-radius: 16px;
+		white-space: pre-wrap;
+		line-height: 1.5;
+		font-size: 0.95rem;
+	}
+	.chat .msg.user .bubble {
+		background: var(--accent);
+		color: #fff;
+		border-bottom-right-radius: 4px;
+	}
+	.chat .msg.agent .bubble {
+		background: var(--paper-2);
+		color: var(--ink);
+		border-bottom-left-radius: 4px;
+	}
+	.chat .msg .bubble.err {
+		background: rgba(214, 69, 65, 0.1);
+		color: #d64541;
+	}
+	.chat .msg-note,
+	.chat .msg-setup,
+	.chat .msg-foot {
+		margin: 0;
+		font-size: 0.75rem;
+		color: var(--ink-3);
+	}
+	.chat .msg-foot a,
+	.chat .msg-foot .link {
+		color: var(--ink-3);
+		font: inherit;
+		background: none;
+		border: 0;
+		padding: 0;
+		cursor: pointer;
+		text-decoration: underline;
+	}
+	.chat .body {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+	.chat .view .mcp-view {
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		overflow: hidden;
+		background: var(--paper);
+	}
+	.chat .view .mcp-view-label {
+		margin: 0;
+		padding: 0.35rem 0.7rem;
+		font-size: 0.72rem;
+		color: var(--ink-3);
+		border-bottom: 1px solid var(--rule);
+	}
+	.chat .view iframe {
+		display: block;
+		width: 100%;
+		border: 0;
+	}
+	.chat .view .mcp-view-notes {
+		margin: 0;
+		padding: 0.5rem 0.7rem;
+		list-style: none;
+		font-size: 0.8rem;
+		border-top: 1px solid var(--rule);
+	}
+	.chat .view .mcp-view-notes li {
+		display: flex;
+		flex-direction: column;
+	}
+	.chat .view .mcp-view-notes li.blocked b {
+		color: #d64541;
+	}
+	.chat .status {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--ink-3);
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.chat .spin {
+		width: 0.8rem;
+		height: 0.8rem;
+		border: 2px solid var(--rule);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: chat-spin 0.8s linear infinite;
+	}
+	.chat .trace summary {
+		cursor: pointer;
+		font-size: 0.8rem;
+		color: var(--ink-3);
+	}
+	.chat .trace .steps {
+		margin: 0.5rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.chat .trace .steps li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		padding: 0.55rem 0.75rem;
+		margin-bottom: 0.4rem;
+		border-left: 3px solid var(--rule);
+		border-radius: 0 8px 8px 0;
+		background: var(--paper-2);
+		font-size: 0.82rem;
+		color: var(--ink-2);
+	}
+	.chat .trace .steps li b {
+		color: var(--ink);
+		font-size: 0.78rem;
+	}
+	.chat .trace .steps li code {
+		font-size: 0.75rem;
+		word-break: break-word;
+	}
+	.chat .trace .steps li.thinking {
+		font-style: italic;
+	}
+	.chat .trace .steps li.text {
+		display: none; /* the answer is already above */
+	}
+	.chat .trace .steps li.call,
+	.chat .trace .steps li.result {
+		border-left-color: #4f7cd1;
+	}
+	.chat .trace .steps li.ledger {
+		border-left-color: #2e9a5a;
+		font-family: var(--font-mono), monospace;
+	}
+	.chat .trace .steps li.server {
+		border-left-color: #b8860b;
+	}
+	.chat .trace .steps li.error,
+	.chat .trace .steps li.result.error {
+		border-left-color: #d64541;
+	}
+
+	.chat .composer {
+		position: sticky;
+		bottom: 0;
+		padding: 0.75rem 0 1rem;
+		background: linear-gradient(to bottom, transparent, var(--paper) 1.25rem);
+	}
+	.chat .follow {
+		margin-bottom: 0.5rem;
+	}
+	.chat .box {
+		display: flex;
+		align-items: flex-end;
+		gap: 0.5rem;
+		padding: 0.4rem 0.4rem 0.4rem 0.9rem;
+		border: 1px solid var(--rule);
+		border-radius: 20px;
+		background: var(--paper-2);
+		box-shadow: var(--shadow);
+	}
+	.chat .box:focus-within {
+		border-color: var(--accent);
+	}
+	.chat textarea {
+		flex: 1;
+		font: inherit;
+		font-size: 16px; /* no zoom on iOS */
+		resize: none;
+		border: 0;
+		outline: 0;
+		background: none;
+		color: var(--ink);
+		padding: 0.45rem 0;
+		max-height: 160px;
+	}
+	.chat .send {
+		flex: none;
+		width: 2.2rem;
+		height: 2.2rem;
+		border-radius: 50%;
+		border: 0;
+		background: var(--accent);
+		color: #fff;
+		font-size: 1.1rem;
+		cursor: pointer;
+	}
+	.chat .send:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	.chat .foot {
+		margin: 0.5rem 0.25rem 0;
+		font-size: 0.72rem;
+		color: var(--ink-3);
+	}
+
+	@keyframes chat-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@keyframes chat-in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+	@media (max-width: 640px) {
+		.chat .setup-grid {
+			grid-template-columns: 1fr;
+		}
+		.chat .title .back {
+			display: none;
+		}
+		.chat .msg .bubble {
+			max-width: 94%;
+		}
+	}
+</style>
