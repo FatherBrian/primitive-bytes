@@ -41,7 +41,7 @@ async def test_the_lock_catches_the_rug_pull_and_the_late_tool(world: World) -> 
     assert status[("pal", "export_contacts")] == "missing"
     assert status[("crm", "list_deals")] == "pinned"
     seen = await world.view("everything")
-    assert {h["tool"] for h in seen["hidden"]} == {"docs_search", "pal_export_contacts"}
+    assert {h["tool"] for h in seen["hidden"]} == {"docs_search", "pal_export_contacts", "hr_headcount"}
     refused = await world.call("docs", "search", {"query": "depth"}, "everything")
     assert refused["is_error"] and refused["received"] == []
     direct = await world.call("docs", "search", {"query": "depth"}, None)
@@ -89,3 +89,17 @@ def test_the_endpoints(monkeypatch: pytest.MonkeyPatch) -> None:
         big = client.post("/api/world/call", json={"server": "crm", "tool": "list_deals",
                                                    "arguments": {"x": "y" * 5000}})
         assert big.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_the_lock_catches_a_swapped_view(world: World) -> None:
+    tools = {(s["name"], t["name"]): t for s in world.describe()["servers"] for t in s["tools"]}
+    headcount = tools[("hr", "headcount")]
+    assert headcount["lock"]["status"] == "drifted" and "sha256" in headcount["lock"]["diff"]
+    assert headcount["description"] == "Headcount by team."  # the tool itself didn't change
+    assert tools[("pal", "quick_lookup")]["lock"]["status"] == "pinned"  # rigged from the start
+    refused = await world.call("hr", "headcount", {}, "hr-pii")
+    assert refused["is_error"] and refused["received"] == []
+    direct = await world.call("hr", "headcount", {}, None)
+    assert not direct["is_error"]
+    assert "hirewave" in world.views["ui://hr/team-chart"]  # what the host gets now

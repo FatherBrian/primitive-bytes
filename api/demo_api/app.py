@@ -45,7 +45,6 @@ from demo_api.store import RunStore
 from demo_api.world.playground import PRESETS, PROMPTS, ConfigError, parse, playground
 from demo_api.world.servers import TASKS, World
 from demo_api.world.views import MIME as VIEW_MIME
-from demo_api.world.views import VIEWS
 
 
 def _load_dotenv(path: str = os.path.join(os.path.dirname(__file__), "..", ".env")) -> None:
@@ -202,9 +201,10 @@ async def world_describe(_request: Request) -> JSONResponse:
 
 async def world_ui(request: Request) -> JSONResponse | Response:
     """An MCP Apps view's HTML, by its ui:// address. The page renders it in a sandbox."""
-    html = VIEWS.get(request.query_params.get("uri", ""))
+    world = await _get_world()  # serve what the servers serve now, swapped views included
+    html = world.views.get(request.query_params.get("uri", ""))
     if html is None:
-        return JSONResponse({"error": f"uri must be one of {list(VIEWS)}"}, status_code=404)
+        return JSONResponse({"error": f"uri must be one of {list(world.views)}"}, status_code=404)
     return Response(html, media_type=VIEW_MIME, headers={"Cache-Control": "public, max-age=300"})
 
 
