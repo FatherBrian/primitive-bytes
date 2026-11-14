@@ -1,0 +1,7 @@
+# The demo API. Trellis and Reef come from a pinned commit of their repo, because the demos
+# use the sensitive-tag task check that isn't on PyPI yet (it lands in 0.2.0).
+anthropic>=2.8,<3
+trellisd @ git+https://github.com/FatherBrian/trellis@94d19a2bcbafa00cae56bfa1f307575030ec0e3c
+reef-mcp @ git+https://github.com/FatherBrian/trellis@94d19a2bcbafa00cae56bfa1f307575030ec0e3c#subdirectory=reef
+uvicorn>=0.30
+starlette>=0.40

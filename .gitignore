@@ -22,3 +22,7 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# demo API secrets (local runs only)
+api/.env
+__pycache__/
