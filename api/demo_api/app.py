@@ -23,8 +23,11 @@ events only, nothing about the visitor.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
+from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -39,6 +42,7 @@ from demo_api.agent import ClaudeModel, Model, run
 from demo_api.limits import Limits
 from demo_api.scenarios import SCENARIOS
 from demo_api.store import RunStore
+from demo_api.world.servers import TASKS, World
 
 
 def _load_dotenv(path: str = os.path.join(os.path.dirname(__file__), "..", ".env")) -> None:
@@ -141,6 +145,71 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
     )
 
 
+# -- the explorer: Kelpworks without a model (free, so only a loose rate limit) --------------
+
+_world: World | None = None
+_world_lock = asyncio.Lock()
+_browse: dict[str, deque[float]] = defaultdict(deque)
+BROWSE_PER_MIN = int(os.environ.get("DEMO_BROWSE_PER_MIN", "60"))
+
+
+async def _get_world() -> World:
+    global _world
+    async with _world_lock:
+        if _world is not None and _world.ledger_size() > 40_000:
+            _world.close()  # an in-memory ledger shouldn't grow forever
+            _world = None
+        if _world is None:
+            _world = await World().start()
+        return _world
+
+
+def _browse_limited(request: Request) -> JSONResponse | None:
+    now = time.monotonic()
+    hits = _browse[_visitor(request)]
+    while hits and now - hits[0] > 60:
+        hits.popleft()
+    if len(hits) >= BROWSE_PER_MIN:
+        return JSONResponse({"error": "That's a lot of clicks. Give it a minute."}, status_code=429)
+    hits.append(now)
+    if len(_browse) > 10_000:
+        _browse.clear()
+    return None
+
+
+async def world_describe(_request: Request) -> JSONResponse:
+    world = await _get_world()
+    return JSONResponse(world.describe(), headers={"Cache-Control": "public, max-age=300"})
+
+
+async def world_view(request: Request) -> JSONResponse:
+    if (limited := _browse_limited(request)) is not None:
+        return limited
+    task = request.query_params.get("task", "")
+    if task not in TASKS:
+        return JSONResponse({"error": f"task must be one of {list(TASKS)}"}, status_code=400)
+    return JSONResponse(await (await _get_world()).view(task))
+
+
+async def world_call(request: Request) -> JSONResponse:
+    if (limited := _browse_limited(request)) is not None:
+        return limited
+    try:
+        body: dict[str, Any] = await request.json()
+    except ValueError:
+        return JSONResponse({"error": "send JSON"}, status_code=400)
+    world = await _get_world()
+    server, tool, task = body.get("server"), body.get("tool"), body.get("task")
+    args = body.get("arguments") or {}
+    if server not in world.servers or tool not in world.servers[str(server)].tools:
+        return JSONResponse({"error": "no such server or tool"}, status_code=400)
+    if task is not None and task not in TASKS:
+        return JSONResponse({"error": f"task must be null or one of {list(TASKS)}"}, status_code=400)
+    if not isinstance(args, dict) or len(args) > 10 or len(json.dumps(args)) > 4000:
+        return JSONResponse({"error": "arguments must be a small JSON object"}, status_code=400)
+    return JSONResponse(await world.call(str(server), str(tool), args, task))
+
+
 async def get_run(request: Request) -> JSONResponse:
     saved = STORE.get(request.path_params["run_id"])
     if saved is None:
@@ -155,6 +224,9 @@ app = Starlette(
         Route("/health", health),
         Route("/api/run", run_demo, methods=["POST"]),
         Route("/api/runs/{run_id:str}", get_run),
+        Route("/api/world", world_describe),
+        Route("/api/world/view", world_view),
+        Route("/api/world/call", world_call, methods=["POST"]),
     ],
     middleware=[Middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["content-type"])],
 )

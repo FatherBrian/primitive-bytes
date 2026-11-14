@@ -1,0 +1,871 @@
+---
+// Explore Kelpworks: a made-up company's MCP servers, browsable and callable, no model.
+import Page from '../../layouts/Page.astro';
+import { url } from '../../url';
+
+const api = import.meta.env.PUBLIC_DEMO_API ?? '';
+---
+
+<Page
+	title="Explore Kelpworks"
+	description="A made-up company's MCP servers, with real Reef and Trellis in front. Browse the tools, call them yourself, find the traps. No model, no cost."
+>
+	<section class="wrap head">
+		<a class="back eyebrow" href={url('/lab/')}>← Lab</a>
+		<h1>Explore Kelpworks</h1>
+		<p class="dek">
+			Kelpworks is a made-up company that builds underwater survey drones. It has seven MCP
+			servers, thousands of rows of fake data, and a few traps. Call any tool yourself, directly
+			or through <a href={url('/lab/reef-lock/')}>Reef</a> as an agent on a task, and see what
+			gets through.
+		</p>
+		<p class="facts" data-facts></p>
+	</section>
+
+	<section class="wrap explorer" data-explore data-api={api}>
+		<div class="as" role="radiogroup" aria-label="Act as" data-as>
+			<span class="as-label">Act as</span>
+		</div>
+		<p class="as-blurb" data-as-blurb></p>
+
+		<div class="grid">
+			<nav class="servers" aria-label="Servers and tools" data-servers>
+				<p class="muted">{api ? 'Loading Kelpworks…' : 'The explorer needs the demo server, which isn’t set up here.'}</p>
+			</nav>
+			<div class="detail" data-detail aria-live="polite"></div>
+		</div>
+	</section>
+
+	<section class="wrap traps-wrap">
+		<h2 class="label">Traps in Kelpworks</h2>
+		<p class="muted">Try finding them first. Each card says what it is and what, if anything, stops it.</p>
+		<div class="traps" data-traps></div>
+	</section>
+</Page>
+
+<script>
+	type J = Record<string, any>;
+	const root = document.querySelector<HTMLElement>('[data-explore]')!;
+	const API = root.dataset.api ?? '';
+	const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
+	const serversEl = $('[data-servers]');
+	const detailEl = $('[data-detail]');
+	const asEl = $('[data-as]');
+	const asBlurb = $('[data-as-blurb]');
+
+	// Build elements without innerHTML: the data has text aimed at agents, and we echo inputs.
+	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | undefined | false)[]) {
+		const el = document.createElement(tag);
+		for (const [k, v] of Object.entries(attrs)) {
+			if (v === undefined || v === null || v === false) continue;
+			if (k === 'class') el.className = v;
+			else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+			else el.setAttribute(k, v === true ? '' : String(v));
+		}
+		for (const kid of kids) if (kid !== null && kid !== undefined && kid !== false) el.append(kid);
+		return el;
+	}
+
+	const EXAMPLES: Record<string, J> = {
+		'crm/search_accounts': { region: 'emea' },
+		'crm/list_contacts': { account_id: 'A-1003' },
+		'crm/list_deals': { stage: 'negotiation' },
+		'hr/directory': { team: 'Robotics' },
+		'hr/payroll': { team: 'Support' },
+		'hr/performance_reviews': { team: 'Field Ops' },
+		'support/search_tickets': { status: 'open', priority: 'urgent' },
+		'support/get_ticket': { ticket_id: 'T-1007' },
+		'docs/search': { query: 'calibration' },
+		'docs/read_page': { path: '/handbook/on-call' },
+		'warehouse/sample_rows': { table: 'orders', limit: 10 },
+		'warehouse/sales_summary': { group_by: 'product', metric: 'revenue_usd', year: '2026' },
+		'comms/send_email': { to: 'you@example.com', subject: 'Hello', body: 'From the Lab.' },
+		'comms/book_meeting': { with: 'Ada Abernathy', when: 'Tuesday 10:00', topic: 'Survey plan' },
+		'pal/quick_lookup': { anything: 'ada' },
+	};
+
+	let world: J;
+	let mode = 'direct'; // 'direct' or a task id
+	let view: J | null = null; // what the agent sees under the task
+	let current = ''; // "server/tool"
+
+	async function getJSON(path: string, init?: RequestInit) {
+		const res = await fetch(`${API}${path}`, init);
+		const body = await res.json().catch(() => ({}));
+		if (!res.ok) throw new Error(body.error ?? `The demo server said ${res.status}.`);
+		return body;
+	}
+
+	function tool(key: string) {
+		const [s, t] = key.split('/');
+		const server = world.servers.find((x: J) => x.name === s);
+		return { server, tool: server?.tools.find((x: J) => x.name === t) };
+	}
+
+	function seen(server: string, name: string): { ok: boolean; why?: string; desc?: string } {
+		const t = tool(`${server}/${name}`).tool;
+		if (mode === 'direct') return t.offered ? { ok: true, desc: t.description } : { ok: false, why: 'not offered' };
+		const shown = view?.shown.find((x: J) => x.name === t.reef_name);
+		if (shown) return { ok: true, desc: shown.description };
+		const hid = view?.hidden.find((x: J) => x.tool === t.reef_name);
+		if (hid?.why === 'lock') return { ok: false, why: hid.drift === 'added' ? 'not in the lock' : 'changed since locked' };
+		if (hid) return { ok: false, why: `denied by ${hid.denied_by.join(', ') || 'Trellis'}` };
+		return { ok: false, why: 'not listed' };
+	}
+
+	// -- the "act as" switch ------------------------------------------------------------------
+
+	function drawModes() {
+		const opts = [{ id: 'direct', label: 'Direct, no gateway', blurb: 'You talk to each server yourself, the way an agent with raw MCP access would. Nothing checks or masks anything.' }, ...world.tasks];
+		asEl.querySelectorAll('button').forEach((b) => b.remove());
+		for (const o of opts) {
+			asEl.append(
+				h('button', { type: 'button', role: 'radio', 'aria-checked': String(o.id === mode), class: o.id === 'direct' ? 'direct' : '', onclick: () => setMode(o.id) }, o.label),
+			);
+		}
+		const o = opts.find((x) => x.id === mode)!;
+		asBlurb.replaceChildren(
+			mode === 'direct'
+				? o.blurb
+				: h('span', {}, `An agent on this task, through Reef. ${o.blurb} Scope: `, ...o.scope.map((t: string) => h('code', { class: t === 'pii' ? 'pii' : '' }, t)), ` · actions: ${o.actions.join(', ')}.`),
+		);
+	}
+
+	async function setMode(next: string) {
+		mode = next;
+		view = null;
+		drawModes();
+		if (mode !== 'direct') {
+			try {
+				view = await getJSON(`/api/world/view?task=${encodeURIComponent(mode)}`);
+			} catch (e) {
+				asBlurb.textContent = (e as Error).message;
+			}
+		}
+		save();
+		drawServers();
+		drawDetail();
+	}
+
+	// -- the server list ----------------------------------------------------------------------
+
+	function drawServers() {
+		serversEl.replaceChildren(
+			...world.servers.map((s: J) =>
+				h(
+					'div',
+					{ class: 'server' },
+					h('div', { class: 'srv-head' }, h('b', {}, s.title), s.third_party ? h('span', { class: 'badge third' }, 'third-party') : null),
+					h('p', { class: 'srv-about' }, s.about),
+					h(
+						'ul',
+						{},
+						...s.tools.map((t: J) => {
+							const key = `${s.name}/${t.name}`;
+							const v = seen(s.name, t.name);
+							return h(
+								'li',
+								{},
+								h(
+									'button',
+									{ type: 'button', class: `tool-btn ${key === current ? 'on' : ''} ${v.ok ? '' : 'off'}`, onclick: () => select(key), 'aria-current': key === current ? 'true' : null },
+									h('span', { class: `dot ${v.ok ? 'ok' : 'no'}`, title: v.ok ? 'visible' : v.why }),
+									h('code', {}, t.name),
+									t.lock.status !== 'pinned' ? h('span', { class: 'lockflag', title: t.lock.status === 'drifted' ? 'changed since locked' : 'not in the lock' }, t.lock.status === 'drifted' ? 'drift' : 'new') : null,
+								),
+							);
+						}),
+					),
+				),
+			),
+		);
+	}
+
+	// -- one tool -----------------------------------------------------------------------------
+
+	function select(key: string) {
+		current = key;
+		save();
+		drawServers();
+		drawDetail();
+		if (matchMedia('(max-width: 860px)').matches) detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
+
+	function field(name: string, spec: J, value: unknown, required: boolean) {
+		const id = `f-${name}`;
+		let input: HTMLElement;
+		if (spec.enum) {
+			input = h('select', { id, name }, h('option', { value: '' }, required ? 'choose…' : '(any)'), ...spec.enum.map((v: string) => h('option', { value: v, selected: v === value }, v)));
+		} else if (name === 'body') {
+			input = h('textarea', { id, name, rows: 3 });
+			(input as HTMLTextAreaElement).value = String(value ?? '');
+		} else {
+			input = h('input', { id, name, type: spec.type === 'integer' ? 'number' : 'text', value: value ?? '', min: spec.minimum, max: spec.maximum });
+		}
+		return h('label', { class: 'field', for: id }, h('span', {}, name, required ? h('i', {}, ' required') : ''), input);
+	}
+
+	function drawDetail() {
+		if (!current) {
+			detailEl.replaceChildren(h('div', { class: 'empty' }, h('b', {}, 'Pick a tool on the left.'), h('p', {}, 'Then call it. Switch “Act as” to see the same tool through Reef, on different tasks.')));
+			return;
+		}
+		const { server: s, tool: t } = tool(current);
+		const v = seen(s.name, t.name);
+		const props = t.input_schema.properties ?? {};
+		const required: string[] = t.input_schema.required ?? [];
+		const example = EXAMPLES[current] ?? {};
+		const form = h(
+			'form',
+			{ class: 'call', onsubmit: (e: Event) => { e.preventDefault(); call(form as HTMLFormElement); } },
+			...Object.entries(props).map(([n, spec]) => field(n, spec as J, example[n], required.includes(n))),
+			Object.keys(props).length ? null : h('p', { class: 'muted' }, 'No arguments.'),
+			h('button', { type: 'submit', class: 'go' }, mode === 'direct' ? `Call ${s.name}/${t.name}` : `Call ${t.reef_name} through Reef`),
+		);
+		const fields = Object.entries(t.fields ?? {});
+		detailEl.replaceChildren(
+			h(
+				'div',
+				{ class: 'card' },
+				h('p', { class: 'eyebrow crumb' }, `${s.name} server · ${s.third_party ? `third-party, by ${s.publisher}` : 'first-party'}`),
+				h('h2', {}, t.title, ' ', h('code', {}, mode === 'direct' ? t.name : t.reef_name)),
+				h(
+					'div',
+					{ class: 'chips' },
+					h('span', { class: 'chip' }, `action: ${t.action}`),
+					...t.tags.map((tag: string) => h('span', { class: `chip ${tag === 'pii' ? 'pii' : ''}` }, tag)),
+					h('span', { class: `chip lock ${t.lock.status}` }, { pinned: 'pinned in reef.lock', drifted: 'changed since locked', missing: 'not in reef.lock' }[t.lock.status as string]),
+					t.annotations.read_only_hint ? h('span', { class: 'chip' }, 'read-only') : h('span', { class: 'chip warn' }, 'writes'),
+				),
+				h('p', { class: 'desc' }, t.description),
+				t.lock.diff ? h('details', { class: 'diff', open: true }, h('summary', {}, 'What changed since the lock'), h('pre', {}, ...t.lock.diff.split('\n').map((line: string) => h('span', { class: line.startsWith('+') && !line.startsWith('+++') ? 'a' : line.startsWith('-') && !line.startsWith('---') ? 'd' : '' }, line + '\n')))) : null,
+				fields.length ? h('p', { class: 'fields' }, 'Tagged fields: ', ...fields.map(([f, tags]) => h('code', { class: (tags as string[]).includes('pii') ? 'pii' : '' }, `${f} (${(tags as string[]).join(', ')})`))) : null,
+				h(
+					'div',
+					{ class: `sees ${v.ok ? 'ok' : 'no'}` },
+					mode === 'direct'
+						? v.ok ? 'An agent connected straight to this server sees it, description and all.' : 'The server doesn’t offer it.'
+						: v.ok ? h('span', {}, h('b', {}, 'The agent sees this tool. '), v.desc !== t.description ? h('span', {}, 'Reef rewrote the description for the grant: “', v.desc!.split('\n\n').pop()!, '”') : '') : h('span', {}, h('b', {}, 'Hidden from the agent: '), v.why!, '. You can still try calling it; Reef will refuse.'),
+				),
+				form,
+				h('div', { class: 'out', 'data-out': true }),
+				t.trap ? h('details', { class: 'spoiler' }, h('summary', {}, 'Spoiler: what’s off about this tool?'), h('p', {}, h('b', {}, `${t.trap.kind}. `), t.trap.what), h('p', {}, h('b', {}, 'What stops it: '), t.trap.stops_it)) : null,
+			),
+		);
+	}
+
+	async function call(form: HTMLFormElement) {
+		const { server: s, tool: t } = tool(current);
+		const out = form.parentElement!.querySelector<HTMLElement>('[data-out]')!;
+		const args: J = {};
+		for (const el of Array.from(form.elements) as HTMLInputElement[]) {
+			if (!el.name || el.value === '') continue;
+			args[el.name] = el.type === 'number' ? Number(el.value) : el.value;
+		}
+		const button = form.querySelector<HTMLButtonElement>('.go')!;
+		button.disabled = true;
+		out.replaceChildren(h('p', { class: 'muted' }, 'Calling…'));
+		try {
+			const r = await getJSON('/api/world/call', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ server: s.name, tool: t.name, arguments: args, task: mode === 'direct' ? null : mode }),
+			});
+			out.replaceChildren(...result(r));
+		} catch (e) {
+			out.replaceChildren(h('p', { class: 'err' }, (e as Error).message));
+		} finally {
+			button.disabled = false;
+		}
+	}
+
+	function cell(v: unknown) {
+		if (v === '***') return h('td', { class: 'masked', title: 'masked by Reef' }, '***');
+		if (v === null || v === undefined) return h('td', { class: 'muted' }, '—');
+		return h('td', {}, typeof v === 'number' ? v.toLocaleString() : String(v));
+	}
+
+	function table(rows: J[]) {
+		const cols = Object.keys(rows[0] ?? {});
+		return h('div', { class: 'table' }, h('table', {}, h('thead', {}, h('tr', {}, ...cols.map((c) => h('th', {}, c)))), h('tbody', {}, ...rows.map((r) => h('tr', {}, ...cols.map((c) => cell(r[c])))))));
+	}
+
+	function result(r: J): Node[] {
+		const nodes: Node[] = [];
+		const head = r.is_error ? (r.via === 'reef' ? 'Reef refused' : 'The server returned an error') : r.via === 'reef' ? 'Through Reef' : 'Straight from the server';
+		nodes.push(h('p', { class: `res-head ${r.is_error ? 'bad' : 'good'}` }, head));
+		if (r.is_error) nodes.push(h('p', { class: 'err' }, r.text || JSON.stringify(r.result)));
+		else if (r.result && Array.isArray(r.result.rows)) {
+			nodes.push(r.result.rows.length ? table(r.result.rows) : h('p', { class: 'muted' }, 'No rows.'));
+			if (r.result.total > r.result.rows.length) nodes.push(h('p', { class: 'muted small' }, `Showing ${r.result.rows.length} of ${r.result.total}.`));
+		} else if (r.result) {
+			nodes.push(h('dl', { class: 'kv' }, ...Object.entries(r.result).flatMap(([k, v]) => [h('dt', {}, k), h('dd', { class: v === '***' ? 'masked' : '' }, String(v))])));
+		}
+		nodes.push(
+			h('div', { class: 'meta' },
+				h('div', {}, h('b', {}, 'What the server received'), r.received.length ? r.received.map((c: J) => h('code', {}, `${c.tool} ${JSON.stringify(c.arguments)}`)) : h('span', { class: 'muted' }, 'Nothing. The call never reached it.')),
+				r.ledger.length ? h('div', { class: 'ledger' }, h('b', {}, 'Ledger'), ...r.ledger.map((l: J) => h('span', {}, `#${l.seq} ${l.what}${l.why ? ` · ${l.why}` : ''}`))) : h('div', {}, h('b', {}, 'Ledger'), h('span', { class: 'muted' }, 'None. Direct calls leave no record.')),
+			),
+		);
+		return nodes;
+	}
+
+	// -- traps, facts, state ------------------------------------------------------------------
+
+	function drawTraps() {
+		$('[data-traps]').replaceChildren(
+			...world.traps.map((t: J) =>
+				h('details', { class: 'trap' }, h('summary', {}, h('b', {}, t.kind), h('code', {}, t.where)), h('p', {}, t.what), h('p', {}, h('b', {}, 'What stops it: '), t.stops_it), h('button', { type: 'button', class: 'open', onclick: () => { select(`${t.server}/${t.tool}`); root.scrollIntoView({ behavior: 'smooth' }); } }, 'Open this tool')),
+			),
+		);
+	}
+
+	function save() {
+		const q = new URLSearchParams();
+		if (mode !== 'direct') q.set('as', mode);
+		if (current) q.set('tool', current);
+		const qs = q.toString();
+		history.replaceState(null, '', `${location.pathname}${qs ? `?${qs}` : ''}`);
+	}
+
+	async function start() {
+		if (!API) return;
+		try {
+			world = await getJSON('/api/world');
+		} catch (e) {
+			serversEl.replaceChildren(h('p', { class: 'err' }, (e as Error).message));
+			return;
+		}
+		const tables = world.company.tables as Record<string, number>;
+		const rows = Object.values(tables).reduce((a, b) => a + b, 0);
+		const tools = world.servers.reduce((a: number, s: J) => a + s.tools.length, 0);
+		$('[data-facts]').replaceChildren(
+			...[`${world.servers.length} MCP servers`, `${tools} tools`, `${rows.toLocaleString()} rows`, `${world.traps.length} traps`, 'no model, no cost'].map((f) => h('span', { class: 'fact' }, f)),
+		);
+		const q = new URLSearchParams(location.search);
+		const want = q.get('tool') ?? '';
+		if (tool(want).tool) current = want;
+		drawTraps();
+		await setMode(world.tasks.some((t: J) => t.id === q.get('as')) ? q.get('as')! : 'direct');
+	}
+
+	start();
+</script>
+
+<style>
+	.head {
+		padding-top: 4rem;
+		padding-bottom: 1.5rem;
+	}
+	.back {
+		display: inline-block;
+		margin-bottom: 1rem;
+		color: var(--accent-ink);
+		text-decoration: none;
+	}
+	h1 {
+		margin-bottom: 0.75rem;
+	}
+	.dek {
+		max-width: 64ch;
+		margin: 0;
+		color: var(--ink-2);
+		font-size: 1.1rem;
+		line-height: 1.6;
+	}
+	.facts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 1.25rem 0 0;
+	}
+	.facts :global(.fact) {
+		padding: 0.25rem 0.65rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		color: var(--ink-2);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.75rem;
+	}
+	.muted {
+		color: var(--ink-3);
+	}
+	.small {
+		font-size: 0.8rem;
+	}
+
+	/* act as */
+	.as {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper-2);
+	}
+	.as-label {
+		margin-right: 0.35rem;
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.72rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.as :global(button) {
+		padding: 0.4rem 0.8rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink-2);
+		font: inherit;
+		font-size: 0.86rem;
+		cursor: pointer;
+	}
+	.as :global(button[aria-checked='true']) {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: #fff;
+	}
+	.as :global(button.direct[aria-checked='true']) {
+		border-color: var(--ink);
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.as-blurb {
+		min-height: 1.5em;
+		margin: 0.6rem 0.25rem 1.25rem;
+		color: var(--ink-2);
+		font-size: 0.9rem;
+	}
+	.as-blurb :global(code) {
+		margin: 0 0.15rem;
+		font-size: 0.8rem;
+	}
+
+	/* layout */
+	.grid {
+		display: grid;
+		grid-template-columns: 280px 1fr;
+		gap: 1.25rem;
+		align-items: start;
+	}
+	.servers {
+		position: sticky;
+		top: 4.5rem;
+		max-height: calc(100vh - 5.5rem);
+		overflow: auto;
+		padding-right: 0.25rem;
+	}
+	.servers :global(.server) {
+		margin-bottom: 1rem;
+	}
+	.servers :global(.srv-head) {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.92rem;
+	}
+	.servers :global(.srv-about) {
+		margin: 0.15rem 0 0.35rem;
+		color: var(--ink-3);
+		font-size: 0.78rem;
+		line-height: 1.4;
+	}
+	.servers :global(ul) {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.servers :global(.tool-btn) {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.3rem 0.5rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: var(--ink);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.servers :global(.tool-btn:hover) {
+		background: var(--paper-2);
+	}
+	.servers :global(.tool-btn.on) {
+		background: var(--accent-wash);
+	}
+	.servers :global(.tool-btn.off code) {
+		color: var(--ink-3);
+		text-decoration: line-through;
+		text-decoration-color: var(--rule);
+	}
+	.servers :global(.tool-btn code) {
+		background: none;
+		padding: 0;
+		font-size: 0.8rem;
+	}
+	.servers :global(.dot) {
+		flex: none;
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+	}
+	.servers :global(.dot.ok) {
+		background: #2e9a5a;
+	}
+	.servers :global(.dot.no) {
+		background: var(--rule);
+		box-shadow: inset 0 0 0 1px var(--ink-3);
+	}
+	.servers :global(.lockflag) {
+		margin-left: auto;
+		padding: 0 0.35rem;
+		border-radius: 4px;
+		background: rgba(214, 69, 65, 0.14);
+		color: #d64541;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.65rem;
+		text-transform: uppercase;
+	}
+	:global(.badge.third) {
+		padding: 0 0.4rem;
+		border-radius: 4px;
+		background: rgba(184, 134, 11, 0.15);
+		color: #b8860b;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.65rem;
+		font-weight: 500;
+	}
+
+	/* the tool */
+	.detail :global(.empty),
+	.detail :global(.card) {
+		padding: 1.4rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper);
+	}
+	.detail :global(.empty p) {
+		margin: 0.35rem 0 0;
+		color: var(--ink-2);
+	}
+	.detail :global(.crumb) {
+		margin: 0 0 0.35rem;
+		color: var(--ink-3);
+	}
+	.detail :global(h2) {
+		margin: 0 0 0.6rem;
+		font-size: 1.35rem;
+	}
+	.detail :global(h2 code) {
+		font-size: 0.8rem;
+		vertical-align: middle;
+	}
+	.detail :global(.chips) {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.detail :global(.chip) {
+		padding: 0.1rem 0.55rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		color: var(--ink-2);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.72rem;
+	}
+	:global(.pii) {
+		border-color: rgba(214, 69, 65, 0.4) !important;
+		color: #d64541 !important;
+	}
+	.detail :global(.chip.lock.pinned) {
+		border-color: rgba(46, 160, 90, 0.4);
+		color: #2e9a5a;
+	}
+	.detail :global(.chip.lock.drifted),
+	.detail :global(.chip.lock.missing),
+	.detail :global(.chip.warn) {
+		border-color: rgba(214, 69, 65, 0.4);
+		color: #d64541;
+	}
+	.detail :global(.desc) {
+		margin: 1rem 0 0.5rem;
+		padding: 0.75rem 0.9rem;
+		border-left: 3px solid var(--rule);
+		background: var(--paper-2);
+		font-size: 0.95rem;
+	}
+	.detail :global(.diff summary),
+	.detail :global(.spoiler summary) {
+		cursor: pointer;
+		font-size: 0.85rem;
+		font-weight: 600;
+	}
+	.detail :global(.diff pre) {
+		margin: 0.5rem 0 0;
+		padding: 0.75rem;
+		overflow: auto;
+		border-radius: 8px;
+		background: #16161d;
+		color: #c9c9d1;
+		font-size: 0.72rem;
+		line-height: 1.55;
+		white-space: pre-wrap;
+	}
+	.detail :global(.diff .a) {
+		color: #7ee787;
+	}
+	.detail :global(.diff .d) {
+		color: #ff7b72;
+	}
+	.detail :global(.fields) {
+		margin: 0.75rem 0 0;
+		color: var(--ink-2);
+		font-size: 0.85rem;
+	}
+	.detail :global(.fields code) {
+		margin-right: 0.35rem;
+		font-size: 0.75rem;
+	}
+	.detail :global(.sees) {
+		margin: 1rem 0;
+		padding: 0.6rem 0.85rem;
+		border-radius: 8px;
+		font-size: 0.88rem;
+	}
+	.detail :global(.sees.ok) {
+		background: rgba(46, 160, 90, 0.1);
+	}
+	.detail :global(.sees.no) {
+		background: rgba(214, 69, 65, 0.1);
+	}
+	.detail :global(.call) {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+		gap: 0.65rem;
+		align-items: end;
+		padding-top: 1rem;
+		border-top: 1px solid var(--rule);
+	}
+	.detail :global(.field) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.75rem;
+		color: var(--ink-2);
+	}
+	.detail :global(.field i) {
+		color: var(--ink-3);
+		font-style: normal;
+	}
+	.detail :global(.field input),
+	.detail :global(.field select),
+	.detail :global(.field textarea) {
+		padding: 0.45rem 0.55rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+		font-family: var(--font-body, inherit);
+		font-size: 0.88rem;
+	}
+	.detail :global(.go) {
+		grid-column: 1 / -1;
+		justify-self: start;
+		padding: 0.55rem 1.2rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--accent);
+		color: #fff;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.detail :global(.go:disabled) {
+		opacity: 0.5;
+	}
+	.detail :global(.out) {
+		margin-top: 1rem;
+	}
+	.detail :global(.res-head) {
+		margin: 0 0 0.5rem;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.75rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+	.detail :global(.res-head.good) {
+		color: #2e9a5a;
+	}
+	.detail :global(.res-head.bad),
+	.detail :global(.err) {
+		color: #d64541;
+	}
+	.detail :global(.table) {
+		max-height: 420px;
+		overflow: auto;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+	}
+	.detail :global(table) {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.8rem;
+	}
+	.detail :global(th),
+	.detail :global(td) {
+		padding: 0.35rem 0.6rem;
+		border-bottom: 1px solid var(--rule);
+		text-align: left;
+		white-space: nowrap;
+	}
+	.detail :global(th) {
+		position: sticky;
+		top: 0;
+		background: var(--paper-2);
+		font-family: var(--font-mono), monospace;
+		font-weight: 500;
+		font-size: 0.72rem;
+	}
+	:global(td.masked),
+	:global(dd.masked) {
+		color: #d64541;
+		font-family: var(--font-mono), monospace;
+		background: rgba(214, 69, 65, 0.06);
+	}
+	.detail :global(.kv) {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: 0.35rem 1rem;
+		margin: 0;
+		font-size: 0.85rem;
+	}
+	.detail :global(.kv dt) {
+		font-family: var(--font-mono), monospace;
+		font-size: 0.75rem;
+		color: var(--ink-3);
+	}
+	.detail :global(.kv dd) {
+		margin: 0;
+		white-space: pre-wrap;
+		word-break: break-word;
+	}
+	.detail :global(.meta) {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.75rem;
+		margin-top: 0.85rem;
+	}
+	.detail :global(.meta > div) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.65rem 0.8rem;
+		border-radius: 8px;
+		background: var(--paper-2);
+		font-size: 0.8rem;
+	}
+	.detail :global(.meta b) {
+		font-size: 0.75rem;
+	}
+	.detail :global(.meta code) {
+		font-size: 0.72rem;
+		word-break: break-word;
+	}
+	.detail :global(.ledger span) {
+		font-family: var(--font-mono), monospace;
+		font-size: 0.72rem;
+		color: var(--ink-2);
+	}
+	.detail :global(.spoiler) {
+		margin-top: 1.25rem;
+		padding: 0.75rem 0.9rem;
+		border: 1px dashed var(--rule);
+		border-radius: 8px;
+	}
+	.detail :global(.spoiler p) {
+		margin: 0.5rem 0 0;
+		font-size: 0.88rem;
+		color: var(--ink-2);
+	}
+
+	/* traps */
+	.label {
+		margin: 3rem 0 0.4rem;
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.78rem;
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.traps {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+		gap: 0.75rem;
+		margin-top: 1rem;
+	}
+	.traps :global(.trap) {
+		padding: 0.85rem 1rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper-2);
+	}
+	.traps :global(summary) {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: baseline;
+		cursor: pointer;
+	}
+	.traps :global(summary code) {
+		font-size: 0.72rem;
+	}
+	.traps :global(p) {
+		margin: 0.55rem 0 0;
+		color: var(--ink-2);
+		font-size: 0.88rem;
+	}
+	.traps :global(.open) {
+		margin-top: 0.6rem;
+		padding: 0.3rem 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--accent-ink);
+		font: inherit;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+
+	@media (max-width: 860px) {
+		.grid {
+			grid-template-columns: 1fr;
+		}
+		.servers {
+			position: static;
+			max-height: none;
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+			gap: 0 1rem;
+		}
+		.detail :global(.meta) {
+			grid-template-columns: 1fr;
+		}
+	}
+	@media (max-width: 520px) {
+		.head {
+			padding-top: 2.5rem;
+		}
+		.detail :global(.card),
+		.detail :global(.empty) {
+			padding: 1rem;
+		}
+	}
+</style>
