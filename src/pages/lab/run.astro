@@ -1,0 +1,113 @@
+---
+// Replays a saved live run from its link: /lab/run/?id=…
+import Transcript from '../../components/demo/Transcript.astro';
+import Demo from '../../layouts/Demo.astro';
+
+const api = import.meta.env.PUBLIC_DEMO_API ?? '';
+---
+
+<Demo title="A saved run" description="Someone ran this in the Lab. This is exactly what the model saw and did, played back.">
+	<section class="replay" slot="demo" data-replay data-api={api}>
+		<p class="eyebrow" data-what>Loading…</p>
+		<p class="meta" data-meta></p>
+		<Transcript />
+		<p class="foot" data-foot hidden></p>
+	</section>
+	<p>
+		Saved runs keep the run itself and nothing about whoever ran it. Older runs get cleared out
+		eventually, so a link may stop working.
+	</p>
+</Demo>
+
+<script>
+	import { url } from '../../url';
+	import { showEvent, type Ev } from '../../components/demo/transcript';
+
+	const DEMOS: Record<string, { title: string; page: string; options: Record<string, string> }> = {
+		'rug-pull': {
+			title: 'Reef lock: the rug pull',
+			page: '/lab/reef-lock/',
+			options: { none: 'No protection', 'reef-lock': 'Through Reef, with the lock' },
+		},
+		grant: {
+			title: 'Grant playground',
+			page: '/lab/grant-playground/',
+			options: { headcount: 'Headcount review', 'headcount-pii': 'Headcount review, with pii' },
+		},
+	};
+
+	const root = document.querySelector<HTMLElement>('[data-replay]')!;
+	const what = root.querySelector<HTMLElement>('[data-what]')!;
+	const meta = root.querySelector<HTMLElement>('[data-meta]')!;
+	const foot = root.querySelector<HTMLElement>('[data-foot]')!;
+	const steps = root.querySelector<HTMLElement>('[data-steps]')!;
+	const id = new URLSearchParams(location.search).get('id');
+	const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+	const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+	async function replay() {
+		if (!root.dataset.api) return void (what.textContent = 'Saved runs need the demo server, which isn’t set up here.');
+		if (!id) return void (what.textContent = 'No run in this link.');
+		let run: Ev;
+		try {
+			const res = await fetch(`${root.dataset.api}/api/runs/${encodeURIComponent(id)}`);
+			run = await res.json();
+			if (!res.ok) return void (what.textContent = run.error ?? 'Couldn’t find that run.');
+		} catch {
+			return void (what.textContent = 'Couldn’t reach the demo server. Try again in a minute.');
+		}
+		const demo = DEMOS[run.scenario];
+		what.textContent = demo ? demo.title : run.scenario;
+		const when = new Date(run.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+		meta.textContent = `${demo?.options[run.option] ?? run.option} · Claude Haiku 5.5 · ${when}`;
+		for (const e of run.events as Ev[]) {
+			if (showEvent(steps, e) && !still) await wait(450);
+		}
+		foot.hidden = false;
+		const a = document.createElement('a');
+		a.href = url(demo?.page ?? '/lab/');
+		a.textContent = 'Run it yourself →';
+		foot.replaceChildren(`This run cost $${Number(run.cost_usd).toFixed(4)}. `, a);
+	}
+
+	replay();
+</script>
+
+<style>
+	.replay {
+		margin: 2.5rem 0;
+		padding: 1.5rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper);
+	}
+	.eyebrow {
+		margin: 0;
+		color: var(--accent-ink);
+	}
+	.meta {
+		margin: 0.35rem 0 0;
+		color: var(--ink-3);
+		font-size: 0.85rem;
+	}
+	.meta:empty {
+		display: none;
+	}
+	.foot {
+		margin: 0.9rem 0 0;
+		color: var(--ink-3);
+		font-size: 0.88rem;
+	}
+	.foot[hidden] {
+		display: none;
+	}
+	.foot :global(a) {
+		color: var(--accent-ink);
+		font-weight: 600;
+	}
+	@media (max-width: 640px) {
+		.replay {
+			padding: 1rem;
+		}
+	}
+</style>

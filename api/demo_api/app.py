@@ -14,6 +14,11 @@ Environment:
     DEMO_RUNS_PER_DAY        default 25 per visitor
     DEMO_MAX_CONCURRENT      default 4
     DEMO_FAKE_MODEL          1 uses a scripted model instead of Claude (tests, local dev)
+    DEMO_DB                  SQLite file for saved runs (default runs.db; on a host, a volume)
+    DEMO_KEEP_RUNS           how many saved runs to keep (default 5000)
+
+GET /api/runs/{id} returns a saved run, so a link can replay it. Saved runs hold the run's
+events only, nothing about the visitor.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from starlette.routing import Route
 from demo_api.agent import ClaudeModel, Model, run
 from demo_api.limits import Limits
 from demo_api.scenarios import SCENARIOS
+from demo_api.store import RunStore
 
 
 def _load_dotenv(path: str = os.path.join(os.path.dirname(__file__), "..", ".env")) -> None:
@@ -54,6 +60,7 @@ def _load_dotenv(path: str = os.path.join(os.path.dirname(__file__), "..", ".env
 
 _load_dotenv()
 LIMITS = Limits()
+STORE = RunStore()
 
 
 def _model() -> Model:
@@ -99,19 +106,33 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
     if why:
         return JSONResponse({"error": why}, status_code=429)
 
+    scenario_name = str(body.get("scenario"))
+
     async def events() -> AsyncIterator[str]:
         spent = 0.0
+        run_id = RunStore.new_id()
+        saved: list[dict[str, Any]] = []
+        yield f"data: {json.dumps({'type': 'run', 'id': run_id})}\n\n"
         async with LIMITS.slots:
             try:
                 async with build(option) as setup:
                     async for event in run(setup, _model()):
                         if event["type"] in ("usage", "done"):
                             spent = event["cost_usd"]
+                        if event["type"] != "usage":
+                            saved.append(event)
                         yield f"data: {json.dumps(event)}\n\n"
             except Exception as exc:
-                yield f"data: {json.dumps({'type': 'error', 'message': f'The run failed: {type(exc).__name__}'})}\n\n"
+                failed = {"type": "error", "message": f"The run failed: {type(exc).__name__}"}
+                saved.append(failed)
+                yield f"data: {json.dumps(failed)}\n\n"
             finally:
                 LIMITS.record(spent)
+                if any(e["type"] == "done" for e in saved):
+                    try:
+                        STORE.save(run_id, scenario_name, option, saved, spent)
+                    except Exception:  # a lost save never breaks the live run
+                        pass
 
     return StreamingResponse(
         events(),
@@ -120,9 +141,20 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
     )
 
 
+async def get_run(request: Request) -> JSONResponse:
+    saved = STORE.get(request.path_params["run_id"])
+    if saved is None:
+        return JSONResponse({"error": "no run with that id (old runs are cleared out)"}, status_code=404)
+    return JSONResponse(saved, headers={"Cache-Control": "public, max-age=86400"})
+
+
 origins = [o.strip() for o in os.environ.get("DEMO_ALLOWED_ORIGINS", "http://localhost:4321").split(",") if o.strip()]
 
 app = Starlette(
-    routes=[Route("/health", health), Route("/api/run", run_demo, methods=["POST"])],
+    routes=[
+        Route("/health", health),
+        Route("/api/run", run_demo, methods=["POST"]),
+        Route("/api/runs/{run_id:str}", get_run),
+    ],
     middleware=[Middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["content-type"])],
 )

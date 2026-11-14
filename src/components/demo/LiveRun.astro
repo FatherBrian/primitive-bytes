@@ -1,5 +1,7 @@
 ---
 // "Run it live": one real agent run on the demo API, streamed step by step.
+import Transcript from './Transcript.astro';
+
 interface Props {
 	scenario: string;
 	options: { value: string; label: string }[];
@@ -32,65 +34,53 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	<p class="note" data-note>
 		{api ? 'Each run is a real model call through the real Reef and Trellis, on fake data.' : 'Live runs are coming soon.'}
 	</p>
-	<ol class="steps" data-steps aria-live="polite"></ol>
+	<Transcript />
+	<p class="share" data-share hidden></p>
 </section>
 
 <script>
-	type Ev = Record<string, any>;
-	const esc = (s: unknown) =>
-		String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+	import { runLink, showEvent, type Ev } from './transcript';
 
 	for (const root of document.querySelectorAll<HTMLElement>('[data-live]')) {
 		const api = root.dataset.api!;
 		const steps = root.querySelector<HTMLElement>('[data-steps]')!;
 		const note = root.querySelector<HTMLElement>('[data-note]')!;
+		const share = root.querySelector<HTMLElement>('[data-share]')!;
 		const button = root.querySelector<HTMLButtonElement>('[data-run]')!;
+		let runId = '';
 
-		const add = (cls: string, html: string) => {
-			const li = document.createElement('li');
-			li.className = cls;
-			li.innerHTML = html;
-			steps.appendChild(li);
-		};
+		function offerLink() {
+			const link = runLink(runId);
+			const a = document.createElement('a');
+			a.href = link;
+			a.textContent = 'Link to this run';
+			const copy = document.createElement('button');
+			copy.type = 'button';
+			copy.className = 'copy';
+			copy.textContent = 'Copy link';
+			copy.addEventListener('click', () => {
+				navigator.clipboard?.writeText(link).then(() => (copy.textContent = 'Copied'));
+			});
+			share.replaceChildren(a, copy);
+			share.hidden = false;
+		}
 
 		function show(e: Ev) {
-			switch (e.type) {
-				case 'setup':
-					add('setup', `<b>${esc(e.summary)}</b><span>Task: “${esc(e.task)}”</span>`);
-					break;
-				case 'tools':
-					add('tools', `<b>Tools the agent can see</b>${e.tools.map((t: Ev) => `<span><code>${esc(t.name)}</code> ${esc(t.description)}</span>`).join('') || '<span>none</span>'}`);
-					break;
-				case 'thinking':
-					add('thinking', `<b>Thinking</b><span>${esc(e.text)}</span>`);
-					break;
-				case 'text':
-					add('text', `<b>Agent</b><span class="answer">${esc(e.text)}</span>`);
-					break;
-				case 'tool_call':
-					add('call', `<b>Calls <code>${esc(e.name)}</code></b><span><code>${esc(JSON.stringify(e.input))}</code></span>`);
-					break;
-				case 'tool_result':
-					add(e.is_error ? 'result error' : 'result', `<b>${esc(e.name)} returned</b><span><code>${esc(e.text.slice(0, 400))}</code></span>`);
-					break;
-				case 'ledger':
-					add('ledger', `<b>Ledger</b>${e.entries.map((l: Ev) => `<span>#${l.seq} ${esc(l.what)}${l.why ? ` · ${esc(l.why)}` : ''}</span>`).join('')}`);
-					break;
-				case 'server':
-					add('server', `<b>What the ${esc(e.server)} server actually received</b><span>${e.calls.length ? e.calls.map((c: Ev) => `<code>${esc(c.tool)}</code>`).join(' ') : 'nothing'}</span>`);
-					break;
-				case 'error':
-					add('error', `<b>Stopped</b><span>${esc(e.message)}</span>`);
-					break;
-				case 'done':
-					note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
-					break;
+			if (e.type === 'run') {
+				runId = e.id;
+			} else if (e.type === 'done') {
+				note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
+				if (runId) offerLink();
+			} else {
+				showEvent(steps, e);
 			}
 		}
 
 		button.addEventListener('click', async () => {
 			const option = root.querySelector<HTMLInputElement>('input[type=radio]:checked')?.value;
 			steps.innerHTML = '';
+			share.hidden = true;
+			runId = '';
 			note.textContent = 'Running…';
 			button.disabled = true;
 			try {
@@ -171,7 +161,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		border-color: var(--accent);
 		color: var(--accent-ink);
 	}
-	button {
+	[data-run] {
 		margin-left: auto;
 		padding: 0.5rem 1.25rem;
 		border: 0;
@@ -182,7 +172,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		font-weight: 600;
 		cursor: pointer;
 	}
-	button:disabled {
+	[data-run]:disabled {
 		opacity: 0.5;
 		cursor: default;
 	}
@@ -191,70 +181,36 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		color: var(--ink-3);
 		font-size: 0.85rem;
 	}
-	.steps {
-		margin: 1rem 0 0;
-		padding: 0;
-		list-style: none;
-	}
-	.steps :global(li) {
+	.share {
 		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		padding: 0.7rem 0.85rem;
-		margin-bottom: 0.5rem;
-		border-left: 3px solid var(--rule);
-		border-radius: 0 8px 8px 0;
-		background: var(--paper-2);
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+		margin: 0.75rem 0 0;
 		font-size: 0.88rem;
-		color: var(--ink-2);
-		animation: in 0.25s ease;
 	}
-	.steps :global(li b) {
-		color: var(--ink);
-		font-size: 0.8rem;
+	.share[hidden] {
+		display: none;
+	}
+	.share :global(a) {
+		color: var(--accent-ink);
 		font-weight: 600;
 	}
-	.steps :global(li code) {
-		font-size: 0.78rem;
-		word-break: break-word;
-	}
-	.steps :global(li.thinking) {
-		border-left-color: var(--ink-3);
-		font-style: italic;
-	}
-	.steps :global(li.text) {
-		border-left-color: var(--accent);
-	}
-	.steps :global(.answer) {
-		white-space: pre-wrap;
-		color: var(--ink);
-	}
-	.steps :global(li.call),
-	.steps :global(li.result) {
-		border-left-color: #4f7cd1;
-	}
-	.steps :global(li.ledger) {
-		border-left-color: #2e9a5a;
-		font-family: var(--font-mono), monospace;
-		font-size: 0.78rem;
-	}
-	.steps :global(li.server) {
-		border-left-color: #b8860b;
-	}
-	.steps :global(li.error) {
-		border-left-color: #d64541;
-	}
-	@keyframes in {
-		from {
-			opacity: 0;
-			transform: translateY(4px);
-		}
+	.share :global(.copy) {
+		padding: 0.25rem 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink-2);
+		font: inherit;
+		font-size: 0.8rem;
+		cursor: pointer;
 	}
 	@media (max-width: 640px) {
 		.live {
 			padding: 1rem;
 		}
-		button {
+		[data-run] {
 			margin-left: 0;
 			width: 100%;
 		}

@@ -1,0 +1,67 @@
+---
+// The list a run's steps are drawn into (see transcript.ts).
+---
+
+<ol class="steps" data-steps aria-live="polite"></ol>
+
+<style>
+	.steps {
+		margin: 1rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.steps :global(li) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.7rem 0.85rem;
+		margin-bottom: 0.5rem;
+		border-left: 3px solid var(--rule);
+		border-radius: 0 8px 8px 0;
+		background: var(--paper-2);
+		font-size: 0.88rem;
+		color: var(--ink-2);
+		animation: in 0.25s ease;
+	}
+	.steps :global(li b) {
+		color: var(--ink);
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+	.steps :global(li code) {
+		font-size: 0.78rem;
+		word-break: break-word;
+	}
+	.steps :global(li.thinking) {
+		border-left-color: var(--ink-3);
+		font-style: italic;
+	}
+	.steps :global(li.text) {
+		border-left-color: var(--accent);
+	}
+	.steps :global(.answer) {
+		white-space: pre-wrap;
+		color: var(--ink);
+	}
+	.steps :global(li.call),
+	.steps :global(li.result) {
+		border-left-color: #4f7cd1;
+	}
+	.steps :global(li.ledger) {
+		border-left-color: #2e9a5a;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.78rem;
+	}
+	.steps :global(li.server) {
+		border-left-color: #b8860b;
+	}
+	.steps :global(li.error) {
+		border-left-color: #d64541;
+	}
+	@keyframes in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+</style>

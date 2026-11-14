@@ -7,8 +7,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY demo_api ./demo_api
-RUN useradd --create-home demo
+RUN useradd --create-home demo && mkdir -p /data && chown demo /data
 USER demo
-ENV PORT=8080
+ENV PORT=8080 DEMO_DB=/data/runs.db
 EXPOSE 8080
 CMD ["sh", "-c", "uvicorn demo_api.app:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*'"]

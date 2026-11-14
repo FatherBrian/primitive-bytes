@@ -75,3 +75,38 @@ def test_limits_per_visitor_and_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "budget" in (limits.check("c") or "")
     monkeypatch.setenv("DEMO_ENABLED", "0")
     assert "switched off" in (limits.check("d") or "")
+
+
+def test_store_saves_gets_and_prunes(tmp_path: Any) -> None:
+    from demo_api.store import RunStore
+
+    store = RunStore(str(tmp_path / "runs.db"), keep=2)
+    for n in range(3):
+        store.save(f"r{n}", "grant", "headcount", [{"type": "done", "n": n}], 0.001)
+    assert store.count() == 2
+    assert store.get("r0") is None  # the oldest is gone
+    saved = store.get("r2")
+    assert saved is not None and saved["events"] == [{"type": "done", "n": 2}]
+    assert set(saved) == {"id", "scenario", "option", "created_at", "cost_usd", "events"}
+
+
+def test_a_live_run_is_saved_and_replayable(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEMO_FAKE_MODEL", "1")
+    from starlette.testclient import TestClient
+
+    from demo_api import app as app_module
+    from demo_api.limits import Limits
+    from demo_api.store import RunStore
+
+    monkeypatch.setattr(app_module, "STORE", RunStore(str(tmp_path / "runs.db")))
+    monkeypatch.setattr(app_module, "LIMITS", Limits())
+    client = TestClient(app_module.app)
+    r = client.post("/api/run", json={"scenario": "rug-pull", "option": "reef-lock"})
+    streamed = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: ")]
+    assert streamed[0]["type"] == "run"
+    run_id = streamed[0]["id"]
+    saved = client.get(f"/api/runs/{run_id}").json()
+    assert saved["scenario"] == "rug-pull" and saved["option"] == "reef-lock"
+    assert saved["events"][-1]["type"] == "done"
+    assert "testclient" not in json.dumps(saved)  # the caller's address is never stored
+    assert client.get("/api/runs/nope").status_code == 404

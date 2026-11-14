@@ -26,3 +26,6 @@ pnpm-debug.log*
 # demo API secrets (local runs only)
 api/.env
 __pycache__/
+
+# saved demo runs (local)
+api/runs.db*
