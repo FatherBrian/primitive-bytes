@@ -45,9 +45,12 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 </Page>
 
 <script>
+	import { configureViews, mountView } from '../../components/demo/views';
+
 	type J = Record<string, any>;
 	const root = document.querySelector<HTMLElement>('[data-explore]')!;
 	const API = root.dataset.api ?? '';
+	configureViews(API);
 	const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
 	const serversEl = $('[data-servers]');
 	const detailEl = $('[data-detail]');
@@ -237,6 +240,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 					...t.tags.map((tag: string) => h('span', { class: `chip ${tag === 'pii' ? 'pii' : ''}` }, tag)),
 					h('span', { class: `chip lock ${t.lock.status}` }, { pinned: 'pinned in reef.lock', drifted: 'changed since locked', missing: 'not in reef.lock' }[t.lock.status as string]),
 					t.annotations.read_only_hint ? h('span', { class: 'chip' }, 'read-only') : h('span', { class: 'chip warn' }, 'writes'),
+					t.view ? h('span', { class: 'chip', title: t.view }, 'has an MCP App view') : null,
 				),
 				h('p', { class: 'desc' }, t.description),
 				t.lock.diff ? h('details', { class: 'diff', open: true }, h('summary', {}, 'What changed since the lock'), h('pre', {}, ...t.lock.diff.split('\n').map((line: string) => h('span', { class: line.startsWith('+') && !line.startsWith('+++') ? 'a' : line.startsWith('-') && !line.startsWith('---') ? 'd' : '' }, line + '\n')))) : null,
@@ -250,7 +254,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 				),
 				form,
 				h('div', { class: 'out', 'data-out': true }),
-				t.trap ? h('details', { class: 'spoiler' }, h('summary', {}, 'Spoiler: what’s off about this tool?'), h('p', {}, h('b', {}, `${t.trap.kind}. `), t.trap.what), h('p', {}, h('b', {}, 'What stops it: '), t.trap.stops_it)) : null,
+				t.traps.length ? h('details', { class: 'spoiler' }, h('summary', {}, 'Spoiler: what’s off about this tool?'), ...t.traps.flatMap((trap: J) => [h('p', {}, h('b', {}, `${trap.kind}. `), trap.what), h('p', {}, h('b', {}, 'What stops it: '), trap.stops_it)])) : null,
 			),
 		);
 	}
@@ -273,6 +277,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 				body: JSON.stringify({ server: s.name, tool: t.name, arguments: args, task: mode === 'direct' ? null : mode }),
 			});
 			out.replaceChildren(...result(r));
+			if (t.view && !r.is_error && r.result) void mountView(out, t.view, args, r.result);
 		} catch (e) {
 			out.replaceChildren(h('p', { class: 'err' }, (e as Error).message));
 		} finally {

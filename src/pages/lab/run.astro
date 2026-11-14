@@ -21,7 +21,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 <script>
 	import { url } from '../../url';
-	import { showEvent, type Ev } from '../../components/demo/transcript';
+	import { configureViews, showEvent, type Ev } from '../../components/demo/transcript';
 
 	const DEMOS: Record<string, { title: string; page: string; options: Record<string, string> }> = {
 		'rug-pull': {
@@ -37,6 +37,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	};
 
 	const root = document.querySelector<HTMLElement>('[data-replay]')!;
+	configureViews(root.dataset.api ?? '');
 	const what = root.querySelector<HTMLElement>('[data-what]')!;
 	const meta = root.querySelector<HTMLElement>('[data-meta]')!;
 	const foot = root.querySelector<HTMLElement>('[data-foot]')!;

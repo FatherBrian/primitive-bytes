@@ -35,7 +35,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse, StreamingResponse
+from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from demo_api.agent import ClaudeModel, Model, run
@@ -44,6 +44,8 @@ from demo_api.scenarios import SCENARIOS
 from demo_api.store import RunStore
 from demo_api.world.playground import PRESETS, PROMPTS, ConfigError, parse, playground
 from demo_api.world.servers import TASKS, World
+from demo_api.world.views import MIME as VIEW_MIME
+from demo_api.world.views import VIEWS
 
 
 def _load_dotenv(path: str = os.path.join(os.path.dirname(__file__), "..", ".env")) -> None:
@@ -198,6 +200,14 @@ async def world_describe(_request: Request) -> JSONResponse:
     return JSONResponse(out, headers={"Cache-Control": "public, max-age=300"})
 
 
+async def world_ui(request: Request) -> JSONResponse | Response:
+    """An MCP Apps view's HTML, by its ui:// address. The page renders it in a sandbox."""
+    html = VIEWS.get(request.query_params.get("uri", ""))
+    if html is None:
+        return JSONResponse({"error": f"uri must be one of {list(VIEWS)}"}, status_code=404)
+    return Response(html, media_type=VIEW_MIME, headers={"Cache-Control": "public, max-age=300"})
+
+
 async def world_view(request: Request) -> JSONResponse:
     if (limited := _browse_limited(request)) is not None:
         return limited
@@ -242,6 +252,7 @@ app = Starlette(
         Route("/api/runs/{run_id:str}", get_run),
         Route("/api/world", world_describe),
         Route("/api/world/view", world_view),
+        Route("/api/world/ui", world_ui),
         Route("/api/world/call", world_call, methods=["POST"]),
     ],
     middleware=[Middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["content-type"])],

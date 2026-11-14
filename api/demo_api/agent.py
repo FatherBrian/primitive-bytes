@@ -90,6 +90,8 @@ async def run(setup: Setup, model: Model) -> AsyncIterator[dict[str, Any]]:
         yield {"type": "ledger", "entries": ledger}
 
     tools = [_tool_param(t) for t in listed]
+    # MCP Apps: tools that name a view get their result drawn by it (on the page, not here).
+    views = {t.name: ((t.meta or {}).get("ui") or {}).get("resourceUri") for t in listed}
     messages: list[dict[str, Any]] = [{"role": "user", "content": setup.task}]
     spent = 0.0
     for _turn in range(MAX_TURNS):
@@ -138,12 +140,17 @@ async def run(setup: Setup, model: Model) -> AsyncIterator[dict[str, Any]]:
         for block in response.content:
             if block.type != "tool_use":
                 continue
+            view: dict[str, Any] = {}
             try:
                 r = await setup.tools.call(block.name, dict(block.input or {}))
                 text, is_error = _result_text(r), bool(r.is_error)
+                data = r.structured_content
+                if views.get(block.name) and not is_error and data is not None and len(json.dumps(data)) < 20_000:
+                    view = {"ui": views[block.name], "input": block.input, "data": data}
             except Exception as exc:  # the tool layer failing is part of the story, not a crash
                 text, is_error = f"Error: {exc}", True
-            yield {"type": "tool_result", "id": block.id, "name": block.name, "text": text, "is_error": is_error}
+            yield {"type": "tool_result", "id": block.id, "name": block.name, "text": text,
+                   "is_error": is_error, **view}
             results.append(
                 {"type": "tool_result", "tool_use_id": block.id, "content": text, "is_error": is_error}
             )

@@ -42,10 +42,11 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 </section>
 
 <script>
-	import { shareLink, showEvent, streamRun, type Ev } from './transcript';
+	import { configureViews, shareLink, showEvent, streamRun, type Ev } from './transcript';
 
 	for (const root of document.querySelectorAll<HTMLElement>('[data-live]')) {
 		const api = root.dataset.api!;
+		configureViews(api);
 		const steps = root.querySelector<HTMLElement>('[data-steps]')!;
 		const note = root.querySelector<HTMLElement>('[data-note]')!;
 		const share = root.querySelector<HTMLElement>('[data-share]')!;

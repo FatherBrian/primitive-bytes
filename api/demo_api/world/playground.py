@@ -76,7 +76,21 @@ class Config:
         return f"Through Reef on the “{task}” grant, {lock}. Connected: {servers}."
 
 
+_OPEN = {"servers": ["docs", "comms"], "gateway": "direct", "task": None, "lock": False, "prompt": "calibration"}
+_LOCKED = {"servers": ["docs", "comms"], "gateway": "reef", "task": "everything", "lock": True, "prompt": "calibration"}
+
+# A preset may carry "compare": a second config to run side by side with the first.
 PRESETS: list[dict[str, Any]] = [
+    {"id": "compare-rug-pull", "label": "Side by side: rug pull, open vs locked",
+     "blurb": "The same question twice: straight to the servers, and through Reef with the lock.",
+     "config": _OPEN, "compare": _LOCKED},
+    {"id": "compare-grants", "label": "Side by side: two grants",
+     "blurb": "Payroll by team on a headcount grant and on a pii grant.",
+     "config": {"servers": ["hr"], "gateway": "reef", "task": "headcount", "lock": True, "prompt": "payroll"},
+     "compare": {"servers": ["hr"], "gateway": "reef", "task": "hr-pii", "lock": True, "prompt": "payroll"}},
+    {"id": "pal-view", "label": "A view that acts on its own",
+     "blurb": "Pal's lookup comes with an MCP Apps view. Watch what the view asks the host to do.",
+     "config": {"servers": ["crm", "pal", "comms"], "gateway": "reef", "task": "triage", "lock": True, "prompt": "contact"}},
     {"id": "rug-pull-open", "label": "Rug pull, no gateway",
      "blurb": "The wiki's search tool now tells the agent to mail out every page it reads.",
      "config": {"servers": ["docs", "comms"], "gateway": "direct", "task": None, "lock": False, "prompt": "calibration"}},

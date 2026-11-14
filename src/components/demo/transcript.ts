@@ -1,4 +1,7 @@
 // Turns demo API events into transcript steps. Shared by live runs and saved-run replays.
+import { configureViews, mountView } from './views';
+
+export { configureViews };
 export type Ev = Record<string, any>;
 
 const esc = (s: unknown) =>
@@ -9,6 +12,7 @@ function add(steps: HTMLElement, cls: string, html: string) {
 	li.className = cls;
 	li.innerHTML = html;
 	steps.appendChild(li);
+	return li;
 }
 
 /** Adds the step for one event. Returns true if the event drew something. */
@@ -33,13 +37,15 @@ export function showEvent(steps: HTMLElement, e: Ev): boolean {
 		case 'tool_call':
 			add(steps, 'call', `<b>Calls <code>${esc(e.name)}</code></b><span><code>${esc(JSON.stringify(e.input))}</code></span>`);
 			return true;
-		case 'tool_result':
-			add(
+		case 'tool_result': {
+			const li = add(
 				steps,
 				e.is_error ? 'result error' : 'result',
 				`<b>${esc(e.name)} returned</b><span><code>${esc(String(e.text).slice(0, 400))}</code></span>`,
 			);
+			if (e.ui && e.data) void mountView(li, e.ui, e.input ?? {}, e.data);
 			return true;
+		}
 		case 'ledger':
 			add(
 				steps,

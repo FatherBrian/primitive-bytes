@@ -283,3 +283,60 @@ pre {
 		padding: 0 1rem;
 	}
 }
+
+/* MCP Apps views (demo/views.ts) */
+.mcp-view {
+	margin-top: 0.5rem;
+	font-style: normal;
+}
+.mcp-view-label {
+	margin: 0 0 0.3rem;
+	color: var(--ink-3);
+	font-family: var(--font-mono), monospace;
+	font-size: 0.68rem;
+	letter-spacing: 0.04em;
+}
+.mcp-view iframe {
+	display: block;
+	width: 100%;
+	border: 1px solid var(--rule);
+	border-radius: 8px;
+	background: var(--paper);
+	transition: height 0.15s ease;
+}
+.mcp-view-notes {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	margin: 0.4rem 0 0;
+	padding: 0;
+	list-style: none;
+}
+.mcp-view-notes[hidden] {
+	display: none;
+}
+.mcp-view-notes li {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+	padding: 0.45rem 0.6rem;
+	border-left: 3px solid #d64541;
+	border-radius: 0 6px 6px 0;
+	background: rgba(214, 69, 65, 0.08);
+	color: var(--ink-2);
+	font-size: 0.8rem;
+	animation: none;
+}
+.mcp-view-notes li.shown {
+	border-left-color: #b8860b;
+	background: rgba(184, 134, 11, 0.1);
+}
+.mcp-view-notes li b {
+	color: var(--ink);
+	font-size: 0.78rem;
+}
+.mcp-view-notes li span {
+	font-family: var(--font-mono), monospace;
+	font-size: 0.72rem;
+	word-break: break-word;
+}

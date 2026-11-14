@@ -52,6 +52,8 @@ def test_every_preset_is_a_valid_config() -> None:
         try:
             for p in PRESETS:
                 parse(p["config"], w)
+                if "compare" in p:
+                    parse(p["compare"], w)
         finally:
             w.close()
 
@@ -121,3 +123,27 @@ def test_the_endpoint_runs_and_saves_a_playground(tmp_path: Any, monkeypatch: py
         assert saved["scenario"] == "playground" and json.loads(saved["option"])["lock"] is True
         bad = client.post("/api/run", json={"scenario": "playground", "config": {"servers": []}})
         assert bad.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_views_ride_along_through_reef(world: World) -> None:
+    config = parse({"servers": ["pal"], "gateway": "reef", "task": "pipeline", "lock": True,
+                    "prompt": "contact"}, world)
+    async with playground(world, config) as setup:
+        events = [e async for e in run(setup, FakeModel())]
+    result = next(e for e in events if e["type"] == "tool_result")
+    assert result["ui"] == "ui://pal/lookup-cards"
+    assert result["data"]["rows"][0]["email"] == "***"  # the view gets what Reef let through
+
+
+def test_the_view_endpoint() -> None:
+    from demo_api import app as app_module
+
+    with TestClient(app_module.app) as client:
+        r = client.get("/api/world/ui?uri=ui://crm/deal-board")
+        assert r.status_code == 200 and r.headers["content-type"].startswith("text/html;profile=mcp-app")
+        assert "ui/initialize" in r.text
+        assert client.get("/api/world/ui?uri=ui://nope").status_code == 404
+        tools = {t["name"]: t for s in client.get("/api/world").json()["servers"] for t in s["tools"]}
+        assert tools["quick_lookup"]["view"] == "ui://pal/lookup-cards"
+        assert {t["kind"] for t in tools["quick_lookup"]["traps"]} >= {"Overreach", "A view that acts on its own"}

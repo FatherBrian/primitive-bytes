@@ -55,33 +55,51 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 					</div>
 				</fieldset>
 				<p class="summary" data-summary></p>
+				<label class="row compare">
+					<span>Compare with</span>
+					<select name="vs" data-vs></select>
+				</label>
 				<button type="submit" class="run" data-run>Run with Claude Haiku 5.5</button>
 				<p class="hint">A real model on fake data, about a tenth of a cent a run. A few runs per visitor every ten minutes.</p>
 			</form>
 
 			<div class="output">
-				<p class="note" data-note>Pick a preset, or set things up on the left, then run it.</p>
-				<Transcript />
-				<p class="share" data-share hidden></p>
+				<div class="side" data-side="a">
+					<p class="side-label" data-label hidden>Your setup</p>
+					<p class="note" data-note>Pick a preset, or set things up on the left, then run it.</p>
+					<Transcript />
+					<p class="share" data-share hidden></p>
+				</div>
+				<div class="side" data-side="b" hidden>
+					<p class="side-label" data-label></p>
+					<p class="note" data-note></p>
+					<Transcript />
+					<p class="share" data-share hidden></p>
+				</div>
 			</div>
 		</div>
 	</section>
 </Page>
 
 <script>
-	import { shareLink, showEvent, streamRun, type Ev } from '../../components/demo/transcript';
+	import { configureViews, shareLink, showEvent, streamRun, type Ev } from '../../components/demo/transcript';
 
 	type J = Record<string, any>;
 	const root = document.querySelector<HTMLElement>('[data-play]')!;
 	const API = root.dataset.api ?? '';
+	configureViews(API);
 	const form = root.querySelector<HTMLFormElement>('[data-config]')!;
 	const q = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
-	const steps = q('[data-steps]');
-	const note = q('[data-note]');
-	const share = q('[data-share]');
 	const runButton = q<HTMLButtonElement>('[data-run]');
+	const vsSelect = q<HTMLSelectElement>('[data-vs]');
+	const sides = ['a', 'b'].map((s) => {
+		const el = q(`[data-side="${s}"]`);
+		const pick = (sel: string) => el.querySelector<HTMLElement>(sel)!;
+		return { el, label: pick('[data-label]'), note: pick('[data-note]'), steps: pick('[data-steps]'), share: pick('[data-share]') };
+	});
 	let world: J;
 	let running = false;
+	let variants: { label: string; config: J }[] = [];
 
 	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | false)[]) {
 		const el = document.createElement(tag);
@@ -107,7 +125,12 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		};
 	}
 
-	function write(c: J) {
+	function compared(): J | null {
+		const i = Number(vsSelect.value);
+		return vsSelect.value !== '' && variants[i] ? variants[i].config : null;
+	}
+
+	function write(c: J, vs: J | null = null) {
 		for (const el of Array.from(form.elements) as HTMLInputElement[]) {
 			if (el.name === 'servers') el.checked = c.servers.includes(el.value);
 			if (el.name === 'gateway') el.checked = el.value === c.gateway;
@@ -115,58 +138,101 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 			if (el.name === 'lock') el.checked = !!c.lock;
 		}
 		if (c.task) q<HTMLSelectElement>('[data-task]').value = c.task;
+		drawVariants(c, vs);
 		changed();
 	}
 
-	function changed() {
+	// One change away from the current setup: what's worth comparing against.
+	function makeVariants(c: J): { label: string; config: J }[] {
+		const out: { label: string; config: J }[] = [];
+		if (c.gateway === 'reef') {
+			out.push({ label: c.lock ? 'the same, without the lock' : 'the same, with the lock', config: { ...c, lock: !c.lock } });
+			out.push({ label: 'the same, with no gateway', config: { ...c, gateway: 'direct', task: null, lock: false } });
+			for (const t of world.tasks) if (t.id !== c.task) out.push({ label: `the same, on the “${t.label}” grant`, config: { ...c, task: t.id } });
+		} else {
+			out.push({ label: 'the same, through Reef with the lock', config: { ...c, gateway: 'reef', task: 'everything', lock: true } });
+		}
+		if (c.servers.length > 1) {
+			for (const s of c.servers) out.push({ label: `the same, without ${s}`, config: { ...c, servers: c.servers.filter((x: string) => x !== s) } });
+		}
+		return out;
+	}
+
+	// keep: a config to select (from a preset or the URL); otherwise keep the same choice by name.
+	function drawVariants(c: J, keep: J | null) {
+		const label = keep ? null : variants[Number(vsSelect.value)]?.label;
+		const hadOne = vsSelect.value !== '';
+		variants = makeVariants(c);
+		vsSelect.replaceChildren(h('option', { value: '' }, 'nothing, just run it'), ...variants.map((v, i) => h('option', { value: String(i) }, v.label)));
+		const again = keep ? variants.findIndex((v) => same(v.config, keep)) : hadOne ? variants.findIndex((v) => v.label === label) : -1;
+		vsSelect.value = again >= 0 ? String(again) : '';
+	}
+
+	function describe(c: J) {
+		const task = world.tasks.find((t: J) => t.id === c.task);
+		const servers = c.servers.length ? c.servers.join(', ') : 'nothing yet';
+		return c.gateway === 'direct'
+			? `The agent connects straight to ${servers}. Nothing checks, masks or pins anything.`
+			: `The agent reaches ${servers} through Reef, on the “${task?.label}” grant, ${c.lock ? 'with tools pinned by the lock' : 'without a lock'}.`;
+	}
+
+	function changed(ev?: Event) {
 		const c = read();
+		if (ev && (ev.target as HTMLElement).getAttribute('name') !== 'vs') drawVariants(c, null);
 		q('[data-reef-opts]').hidden = c.gateway !== 'reef';
 		const task = world.tasks.find((t: J) => t.id === q<HTMLSelectElement>('[data-task]').value);
 		q('[data-task-blurb]').textContent = task ? `${task.blurb} Scope: ${task.scope.join(', ')}; actions: ${task.actions.join(', ')}.` : '';
-		const servers = c.servers.length ? c.servers.join(', ') : 'nothing yet';
-		q('[data-summary]').textContent =
-			c.gateway === 'direct'
-				? `The agent connects straight to ${servers}. Nothing checks, masks or pins anything.`
-				: `The agent reaches ${servers} through Reef, on the “${task?.label}” grant, ${c.lock ? 'with tools pinned by the lock' : 'without a lock'}.`;
-		runButton.disabled = running || !c.servers.length || !c.prompt;
+		q('[data-summary]').textContent = describe(c);
+		const vs = compared();
+		runButton.textContent = vs ? 'Run both with Claude Haiku 5.5' : 'Run with Claude Haiku 5.5';
+		runButton.disabled = running || !c.servers.length || !c.prompt || (vs !== null && !vs.servers.length);
 		for (const card of root.querySelectorAll<HTMLElement>('.preset')) {
-			card.classList.toggle('on', same(JSON.parse(card.dataset.config!), c));
+			const p = JSON.parse(card.dataset.preset!);
+			card.classList.toggle('on', same(p.config, c) && (p.compare ? !!vs && same(p.compare, vs) : !vs));
 		}
-		save(c);
+		save(c, vs);
 	}
 
 	function same(a: J, b: J) {
-		const norm = (c: J) => JSON.stringify({ ...c, servers: [...c.servers].sort(), task: c.gateway === 'reef' ? c.task : null, lock: c.gateway === 'reef' && !!c.lock });
+		const norm = (c: J) => JSON.stringify({ servers: [...c.servers].sort(), gateway: c.gateway, task: c.gateway === 'reef' ? c.task : null, lock: c.gateway === 'reef' && !!c.lock, prompt: c.prompt });
 		return norm(a) === norm(b);
 	}
 
-	function save(c: J) {
-		const p = new URLSearchParams({ servers: c.servers.join(','), gw: c.gateway, prompt: c.prompt ?? '' });
-		if (c.gateway === 'reef') {
-			p.set('task', c.task);
-			p.set('lock', c.lock ? '1' : '0');
-		}
+	function params(c: J, prefix = '') {
+		const p: [string, string][] = [[`${prefix}servers`, c.servers.join(',')], [`${prefix}gw`, c.gateway]];
+		if (c.gateway === 'reef') p.push([`${prefix}task`, c.task], [`${prefix}lock`, c.lock ? '1' : '0']);
+		return p;
+	}
+
+	function save(c: J, vs: J | null) {
+		const p = new URLSearchParams([...params(c), ['prompt', c.prompt ?? '']]);
+		if (vs) for (const [k, v] of params(vs, 'vs_')) p.set(k, v);
 		history.replaceState(null, '', `${location.pathname}?${p}`);
 	}
 
-	function fromURL(): J | null {
+	function parseURL(p: URLSearchParams, prefix: string, prompt: string | null): J | null {
+		if (!p.get(`${prefix}servers`)) return null;
+		return {
+			servers: p.get(`${prefix}servers`)!.split(',').filter((s) => world.servers.some((x: J) => x.name === s)),
+			gateway: p.get(`${prefix}gw`) === 'reef' ? 'reef' : 'direct',
+			task: p.get(`${prefix}task`),
+			lock: p.get(`${prefix}lock`) === '1',
+			prompt,
+		};
+	}
+
+	function fromURL(): [J, J | null] | null {
 		const p = new URLSearchParams(location.search);
 		const preset = world.presets.find((x: J) => x.id === p.get('preset'));
-		if (preset) return preset.config;
-		if (!p.get('servers')) return null;
-		return {
-			servers: p.get('servers')!.split(',').filter((s) => world.servers.some((x: J) => x.name === s)),
-			gateway: p.get('gw') === 'reef' ? 'reef' : 'direct',
-			task: p.get('task'),
-			lock: p.get('lock') === '1',
-			prompt: p.get('prompt'),
-		};
+		if (preset) return [preset.config, preset.compare ?? null];
+		const c = parseURL(p, '', p.get('prompt'));
+		return c ? [c, parseURL(p, 'vs_', p.get('prompt'))] : null;
 	}
 
 	function draw() {
 		q('[data-presets]').replaceChildren(
 			...world.presets.map((p: J) =>
-				h('button', { type: 'button', class: 'preset', 'data-config': JSON.stringify(p.config), onclick: () => { write(p.config); if (matchMedia('(max-width: 860px)').matches) form.scrollIntoView({ behavior: 'smooth' }); } },
+				h('button', { type: 'button', class: `preset ${p.compare ? 'pair' : ''}`, 'data-preset': JSON.stringify(p), onclick: () => { write(p.config, p.compare ?? null); if (matchMedia('(max-width: 860px)').matches) form.scrollIntoView({ behavior: 'smooth' }); } },
 					h('b', {}, p.label), h('span', {}, p.blurb)),
 			),
 		);
@@ -178,29 +244,45 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		);
 		q('[data-task]').replaceChildren(...world.tasks.map((t: J) => h('option', { value: t.id }, t.label)));
 		form.hidden = false;
-		write(fromURL() ?? world.presets[0].config);
+		const [c, vs] = fromURL() ?? [world.presets[0].config, world.presets[0].compare ?? null];
+		write(c, vs);
+	}
+
+	async function runOne(side: (typeof sides)[number], config: J) {
+		side.steps.replaceChildren();
+		side.share.hidden = true;
+		side.note.textContent = 'Running…';
+		let runId = '';
+		try {
+			await streamRun(API, { scenario: 'playground', config }, (e: Ev) => {
+				if (e.type === 'run') runId = e.id;
+				else if (e.type === 'done') {
+					side.note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
+					if (runId) shareLink(side.share, runId);
+				} else showEvent(side.steps, e);
+			});
+		} catch (e) {
+			side.note.textContent = (e as Error).message;
+		}
 	}
 
 	form.addEventListener('change', changed);
 	form.addEventListener('submit', async (ev) => {
 		ev.preventDefault();
 		const config = read();
-		steps.replaceChildren();
-		share.hidden = true;
-		note.textContent = 'Running…';
+		const vs = compared();
+		const comparing = !!vs;
+		root.querySelector('.grid')!.classList.toggle('comparing', comparing);
+		sides[1].el.hidden = !comparing;
+		sides[0].label.hidden = !comparing;
+		if (vs) {
+			sides[0].label.textContent = `Your setup. ${describe(config)}`;
+			sides[1].label.textContent = `Compared: ${variants[Number(vsSelect.value)].label}. ${describe(vs)}`;
+		}
 		running = true;
 		runButton.disabled = true;
-		let runId = '';
 		try {
-			await streamRun(API, { scenario: 'playground', config }, (e: Ev) => {
-				if (e.type === 'run') runId = e.id;
-				else if (e.type === 'done') {
-					note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
-					if (runId) shareLink(share, runId);
-				} else showEvent(steps, e);
-			});
-		} catch (e) {
-			note.textContent = (e as Error).message;
+			await Promise.all([runOne(sides[0], config), vs ? runOne(sides[1], vs) : Promise.resolve()]);
 		} finally {
 			running = false;
 			changed();
@@ -467,6 +549,42 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	.output {
 		min-width: 0;
 	}
+	.side {
+		min-width: 0;
+	}
+	.side[hidden] {
+		display: none;
+	}
+	.side-label {
+		margin: 0 0 0.6rem;
+		font-size: 0.85rem;
+		font-weight: 600;
+		line-height: 1.45;
+	}
+	.side-label[hidden] {
+		display: none;
+	}
+	[data-side='b'] .side-label {
+		color: var(--accent-ink);
+	}
+	/* Side by side: the setup on top, the two runs in columns under it. */
+	.grid.comparing {
+		grid-template-columns: 1fr;
+	}
+	.grid.comparing .config {
+		position: static;
+	}
+	.grid.comparing .output {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+	.compare {
+		margin: 0 0 0.75rem;
+	}
+	.presets :global(.preset.pair) {
+		border-style: dashed;
+	}
 	.note {
 		margin: 0;
 		padding: 0.75rem 0.9rem;
@@ -501,7 +619,8 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		cursor: pointer;
 	}
 	@media (max-width: 860px) {
-		.grid {
+		.grid,
+		.grid.comparing .output {
 			grid-template-columns: 1fr;
 		}
 		.config {
