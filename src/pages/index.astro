@@ -2,7 +2,7 @@
 import PostList from '../components/PostList.astro';
 import { SITE_DESCRIPTION, SITE_TAGLINE, SITE_TITLE, TOPICS } from '../consts';
 import Page from '../layouts/Page.astro';
-import { DEMOS } from '../data/work';
+import { DEMOS } from '../data/lab';
 import { allNotes, allPosts, noteEntry, postEntry } from '../lib/posts';
 import { url } from '../url';
 
@@ -38,7 +38,7 @@ const notes = (await allNotes()).map(noteEntry);
 	<section class="try wrap">
 		<div class="section-head">
 			<h2>Try a demo</h2>
-			<a href={url('/work/')}>All work →</a>
+			<a href={url('/lab/')}>The Lab →</a>
 		</div>
 		<div class="demo-row">
 			{

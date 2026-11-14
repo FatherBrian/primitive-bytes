@@ -4,11 +4,20 @@ import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import { defineConfig, fontProviders } from 'astro/config';
 
+// Where the site is served from. On its own domain this becomes ''.
+const BASE = '/primitive-bytes';
+
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://fatherbrian.github.io',
-	base: '/primitive-bytes',
+	base: BASE || '/',
 	integrations: [mdx(), sitemap()],
+	// The Lab used to be called Work.
+	redirects: {
+		'/work': `${BASE}/lab/`,
+		'/work/grant-playground': `${BASE}/lab/grant-playground/`,
+		'/work/reef-lock': `${BASE}/lab/reef-lock/`,
+	},
 	markdown: {
 		shikiConfig: {
 			// Light by default; global.css switches code blocks to the dark theme.

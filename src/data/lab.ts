@@ -1,4 +1,4 @@
-// What's on the Work page. Add a project here and it shows up.
+// What's in the Lab. Add a project here and it shows up.
 
 export interface Project {
 	name: string;
@@ -11,14 +11,14 @@ export interface Project {
 
 export const DEMOS = [
 	{
-		path: '/work/grant-playground/',
+		path: '/lab/grant-playground/',
 		title: 'Grant playground',
 		blurb:
 			'Pick a person, an agent and a task, and watch three checks decide every tool call. Then tamper with the ledger and see it get caught.',
 		kind: 'grants',
 	},
 	{
-		path: '/work/reef-lock/',
+		path: '/lab/reef-lock/',
 		title: 'reef lock, live',
 		blurb:
 			'A server quietly rewrites a tool description to steer your agent. The lockfile notices, shows the diff and hides the tool.',
@@ -37,7 +37,7 @@ export const PROJECTS: Project[] = [
 			{ label: 'GitHub', href: 'https://github.com/FatherBrian/trellis' },
 			{ label: 'PyPI', href: 'https://pypi.org/project/trellisd/' },
 		],
-		demo: { label: 'Grant playground', path: '/work/grant-playground/' },
+		demo: { label: 'Grant playground', path: '/lab/grant-playground/' },
 	},
 	{
 		name: 'Reef',
@@ -49,7 +49,7 @@ export const PROJECTS: Project[] = [
 			{ label: 'GitHub', href: 'https://github.com/FatherBrian/trellis/tree/main/reef' },
 			{ label: 'PyPI', href: 'https://pypi.org/project/reef-mcp/' },
 		],
-		demo: { label: 'reef lock, live', path: '/work/reef-lock/' },
+		demo: { label: 'reef lock, live', path: '/lab/reef-lock/' },
 	},
 	{
 		name: 'Primitive Bytes',
