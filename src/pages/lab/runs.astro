@@ -1,0 +1,49 @@
+---
+// Recent runs: what people have run in the Lab, newest first.
+import RecentRuns from '../../components/demo/RecentRuns.astro';
+import Page from '../../layouts/Page.astro';
+import { url } from '../../url';
+---
+
+<Page title="Recent runs" description="What people have run in the Lab lately: real model runs against Kelpworks, each one replayable.">
+	<section class="wrap head">
+		<a class="back eyebrow" href={url('/lab/')}>← Lab</a>
+		<h1>Recent runs</h1>
+		<p class="dek">
+			Real model runs from the <a href={url('/lab/playground/')}>playground</a> and the demos, newest
+			first. Open one to replay it step by step. Runs with someone's own question are never listed
+			here; only the person with the link can see those.
+		</p>
+	</section>
+	<section class="wrap">
+		<RecentRuns limit={50} />
+	</section>
+</Page>
+
+<style>
+	.head {
+		padding-top: 4rem;
+		padding-bottom: 1.5rem;
+	}
+	.back {
+		display: inline-block;
+		margin-bottom: 1rem;
+		color: var(--accent-ink);
+		text-decoration: none;
+	}
+	h1 {
+		margin-bottom: 0.75rem;
+	}
+	.dek {
+		max-width: 64ch;
+		margin: 0;
+		color: var(--ink-2);
+		font-size: 1.1rem;
+		line-height: 1.6;
+	}
+	@media (max-width: 520px) {
+		.head {
+			padding-top: 2.5rem;
+		}
+	}
+</style>

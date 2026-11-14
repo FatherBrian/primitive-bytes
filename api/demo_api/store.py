@@ -34,6 +34,12 @@ class RunStore:
         self._lock = threading.Lock()
         with self._connect() as db:
             db.execute(SCHEMA)
+            # Added later; older databases get the columns (existing runs stay unlisted).
+            have = {row[1] for row in db.execute("PRAGMA table_info(runs)")}
+            if "listed" not in have:
+                db.execute("ALTER TABLE runs ADD COLUMN listed INTEGER NOT NULL DEFAULT 0")
+            if "card" not in have:
+                db.execute("ALTER TABLE runs ADD COLUMN card TEXT")
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=5)
@@ -45,13 +51,23 @@ class RunStore:
         return secrets.token_urlsafe(8)
 
     def save(
-        self, run_id: str, scenario: str, option: str, events: list[dict[str, Any]], cost: float
+        self,
+        run_id: str,
+        scenario: str,
+        option: str,
+        events: list[dict[str, Any]],
+        cost: float,
+        *,
+        listed: bool = False,
+        card: dict[str, Any] | None = None,
     ) -> None:
         with self._lock, self._connect() as db:
             db.execute(
-                "INSERT OR REPLACE INTO runs (id, scenario, option, created_at, cost_usd, events)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (run_id, scenario, option, time.time(), cost, json.dumps(events)),
+                "INSERT OR REPLACE INTO runs"
+                " (id, scenario, option, created_at, cost_usd, events, listed, card)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (run_id, scenario, option, time.time(), cost, json.dumps(events),
+                 1 if listed else 0, json.dumps(card) if card else None),
             )
             db.execute(
                 "DELETE FROM runs WHERE id NOT IN"
@@ -75,6 +91,25 @@ class RunStore:
             "cost_usd": row[4],
             "events": json.loads(row[5]),
         }
+
+    def recent(self, limit: int = 20) -> list[dict[str, Any]]:
+        """The newest listed runs, as feed cards (no events)."""
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id, scenario, created_at, cost_usd, card FROM runs"
+                " WHERE listed = 1 AND card IS NOT NULL ORDER BY created_at DESC LIMIT ?",
+                (max(1, min(limit, 100)),),
+            ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "scenario": r[1],
+                "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(r[2])),
+                "cost_usd": r[3],
+                **json.loads(r[4]),
+            }
+            for r in rows
+        ]
 
     def count(self) -> int:
         with self._connect() as db:

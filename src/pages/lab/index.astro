@@ -1,4 +1,5 @@
 ---
+import RecentRuns from '../../components/demo/RecentRuns.astro';
 import Page from '../../layouts/Page.astro';
 import { DEMOS, PROJECTS } from '../../data/lab';
 import { url } from '../../url';
@@ -66,6 +67,14 @@ import { url } from '../../url';
 	</section>
 
 	<section class="wrap">
+		<div class="label-row">
+			<h2 class="label">Recent runs</h2>
+			<a href={url('/lab/runs/')}>All runs →</a>
+		</div>
+		<RecentRuns limit={6} />
+	</section>
+
+	<section class="wrap">
 		<h2 class="label">Projects</h2>
 		<div class="projects">
 			{
@@ -122,6 +131,17 @@ import { url } from '../../url';
 		font-weight: 500;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
+	}
+	.label-row {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+	}
+	.label-row a {
+		color: var(--accent-ink);
+		font-size: 0.88rem;
+		text-decoration: none;
 	}
 	.explore {
 		display: grid;

@@ -1,8 +1,10 @@
 """Playground runs: a visitor wires up an agent in Kelpworks, and a real model runs it.
 
 The visitor picks which servers to connect, whether the agent goes through Reef (and if so,
-on which task grant and with or without the lock), and one of a fixed set of prompts. They
-never write the prompt, so the endpoint can't be used as a general chatbot.
+on which task grant and with or without the lock), and a question: one of a fixed set, or
+their own, up to 280 characters. The model only gets Kelpworks's tools and a system prompt
+that keeps it to Kelpworks work, and runs have the usual turn, token and budget limits. Runs
+with a visitor's own question are saved and shareable by link, but never listed in the feed.
 
 Every run shares the one World, so a run keeps to its own: its own grant (so its ledger is
 the events under that grant) and its own calls (matched by Reef's decision id, or by a tag
@@ -27,8 +29,12 @@ from reef.gateway import META_KEY, Reef
 SYSTEM = (
     "You are Kelpworks's internal assistant. Kelpworks builds underwater survey drones. Use the"
     " tools to do what the user asks. Keep the final answer under 120 words. If a tool you need"
-    " is missing, refused or masked, say so plainly."
+    " is missing, refused or masked, say so plainly. You only help with Kelpworks work through"
+    " these tools; if asked for anything else, say in one sentence that this demo can only"
+    " work with Kelpworks's tools and data."
 )
+CUSTOM = "custom"
+MAX_QUESTION = 280
 
 
 @dataclass(frozen=True)
@@ -61,11 +67,27 @@ class Config:
     gateway: str  # "direct" or "reef"
     task: str | None  # a TASKS id, with reef
     lock: bool
-    prompt: str
+    prompt: str  # a PROMPTS id, or CUSTOM
+    text: str | None = None  # the visitor's own question, with CUSTOM
+
+    @property
+    def listed(self) -> bool:
+        """Whether the run may appear in the public feed: never with a visitor's own words."""
+        return self.prompt != CUSTOM
+
+    def question(self) -> tuple[str, str]:
+        """The label and the text the agent is asked."""
+        if self.prompt == CUSTOM:
+            return "Your own question", self.text or ""
+        p = PROMPTS[self.prompt]
+        return p.label, p.text
 
     def as_dict(self) -> dict[str, Any]:
-        return {"servers": list(self.servers), "gateway": self.gateway, "task": self.task,
-                "lock": self.lock, "prompt": self.prompt}
+        out = {"servers": list(self.servers), "gateway": self.gateway, "task": self.task,
+               "lock": self.lock, "prompt": self.prompt}
+        if self.text is not None:
+            out["text"] = self.text
+        return out
 
     def summary(self) -> str:
         servers = ", ".join(self.servers)
@@ -138,8 +160,11 @@ def parse(raw: Any, world: World) -> Config:
     if gateway == "reef" and task not in TASKS:
         raise ConfigError(f"through Reef, task must be one of {list(TASKS)}")
     prompt = raw.get("prompt")
-    if prompt not in PROMPTS:
-        raise ConfigError(f"prompt must be one of {list(PROMPTS)}")
+    text: str | None = None
+    if prompt == CUSTOM:
+        text = question(raw.get("text"))
+    elif prompt not in PROMPTS:
+        raise ConfigError(f"prompt must be {CUSTOM} or one of {list(PROMPTS)}")
     order = list(world.servers)
     return Config(
         servers=tuple(sorted(servers, key=order.index)),
@@ -147,7 +172,20 @@ def parse(raw: Any, world: World) -> Config:
         task=task if gateway == "reef" else None,
         lock=bool(raw.get("lock")) if gateway == "reef" else False,
         prompt=prompt,
+        text=text,
     )
+
+
+def question(raw: Any) -> str:
+    """A visitor's own question: plain text, one short paragraph."""
+    if not isinstance(raw, str):
+        raise ConfigError("write a question")
+    text = " ".join("".join(c if c.isprintable() else " " for c in raw).split())
+    if len(text) < 3:
+        raise ConfigError("write a question")
+    if len(text) > MAX_QUESTION:
+        raise ConfigError(f"keep the question to {MAX_QUESTION} characters")
+    return text
 
 
 def _error(text: str) -> types.CallToolResult:
@@ -185,9 +223,9 @@ class PlaygroundSetup(Setup):
 
 @asynccontextmanager
 async def playground(world: World, config: Config) -> AsyncIterator[Setup]:
-    prompt = PROMPTS[config.prompt]
+    label, asked = config.question()
     tag = secrets.token_hex(8)
-    describe = {"summary": config.summary(), "config": config.as_dict(), "prompt": prompt.label}
+    describe = {"summary": config.summary(), "config": config.as_dict(), "prompt": label}
 
     def connected(name: str) -> str | None:
         server = name.split("_", 1)[0]
@@ -209,7 +247,7 @@ async def playground(world: World, config: Config) -> AsyncIterator[Setup]:
                 return _error(f"no tool {name}")
             return await clients[server].call_tool(name.split("_", 1)[1], args, None, {"lab_run": tag})
 
-        setup = PlaygroundSetup(prompt.text, SYSTEM, Tools(list_direct, call_direct), describe)
+        setup = PlaygroundSetup(asked, SYSTEM, Tools(list_direct, call_direct), describe)
     else:
         assert world.trellis is not None
         task = TASKS[config.task or ""]
@@ -231,7 +269,7 @@ async def playground(world: World, config: Config) -> AsyncIterator[Setup]:
                 return _error(f"no tool {name}: that server isn't connected")
             return await reef.call_tool(issued.token, name, args)
 
-        setup = PlaygroundSetup(prompt.text, SYSTEM, Tools(list_reef, call_reef), describe,
+        setup = PlaygroundSetup(asked, SYSTEM, Tools(list_reef, call_reef), describe,
                                 trellis=world.trellis)
         setup.grant_id = issued.grant.id
     setup.tag = tag

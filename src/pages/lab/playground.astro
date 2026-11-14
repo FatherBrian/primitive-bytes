@@ -32,6 +32,13 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 				<fieldset>
 					<legend><span>1</span> Ask</legend>
 					<div class="prompts" data-prompts></div>
+					<div class="own" data-own hidden>
+						<textarea name="text" rows="3" data-text placeholder="Ask Kelpworks's agent anything it could do with these servers."></textarea>
+						<p class="hint">
+							<span data-count></span> Your own questions get a share link, but never show up in the
+							public list of runs. Don't type anything personal.
+						</p>
+					</div>
 				</fieldset>
 				<fieldset>
 					<legend><span>2</span> Connect servers</legend>
@@ -122,6 +129,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 			task: gateway === 'reef' ? data.get('task') : null,
 			lock: gateway === 'reef' && data.get('lock') === 'on',
 			prompt: data.get('prompt'),
+			...(data.get('prompt') === 'custom' ? { text: String(data.get('text') ?? '').trim() } : {}),
 		};
 	}
 
@@ -185,7 +193,14 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		q('[data-summary]').textContent = describe(c);
 		const vs = compared();
 		runButton.textContent = vs ? 'Run both with Claude Haiku 5.5' : 'Run with Claude Haiku 5.5';
-		runButton.disabled = running || !c.servers.length || !c.prompt || (vs !== null && !vs.servers.length);
+		const own = c.prompt === 'custom';
+		q('[data-own]').hidden = !own;
+		const max = world.max_question ?? 280;
+		const textArea = q<HTMLTextAreaElement>('[data-text]');
+		textArea.maxLength = max;
+		q('[data-count]').textContent = `${textArea.value.length}/${max}.`;
+		runButton.disabled =
+			running || !c.servers.length || !c.prompt || (own && (c.text ?? '').length < 3) || (vs !== null && !vs.servers.length);
 		for (const card of root.querySelectorAll<HTMLElement>('.preset')) {
 			const p = JSON.parse(card.dataset.preset!);
 			card.classList.toggle('on', same(p.config, c) && (p.compare ? !!vs && same(p.compare, vs) : !vs));
@@ -238,6 +253,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		);
 		q('[data-prompts]').replaceChildren(
 			...world.prompts.map((p: J) => h('label', { class: 'prompt' }, h('input', { type: 'radio', name: 'prompt', value: p.id }), h('span', {}, h('b', {}, p.label), h('em', {}, `“${p.text}”`)))),
+			h('label', { class: 'prompt' }, h('input', { type: 'radio', name: 'prompt', value: 'custom' }), h('span', {}, h('b', {}, 'Ask your own'), h('em', {}, `Up to ${world.max_question ?? 280} characters.`))),
 		);
 		q('[data-servers]').replaceChildren(
 			...world.servers.map((s: J) => h('label', { class: 'srv' }, h('input', { type: 'checkbox', name: 'servers', value: s.name }), h('span', {}, s.title, s.third_party ? h('i', {}, 'third-party') : null))),
@@ -267,10 +283,13 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	}
 
 	form.addEventListener('change', changed);
+	q('[data-text]').addEventListener('input', () => changed());
 	form.addEventListener('submit', async (ev) => {
 		ev.preventDefault();
 		const config = read();
-		const vs = compared();
+		const picked = compared();
+		// Both sides ask the same question, including the text typed since the variants were drawn.
+		const vs = picked ? { ...picked, prompt: config.prompt, text: config.text } : null;
 		const comparing = !!vs;
 		root.querySelector('.grid')!.classList.toggle('comparing', comparing);
 		sides[1].el.hidden = !comparing;
@@ -433,6 +452,27 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		display: flex;
 		flex-direction: column;
 		font-size: 0.86rem;
+	}
+	.own {
+		margin-top: 0.4rem;
+	}
+	.own[hidden] {
+		display: none;
+	}
+	.own textarea {
+		width: 100%;
+		padding: 0.5rem 0.6rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.88rem;
+		resize: vertical;
+	}
+	.own textarea:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
 	}
 	.prompts :global(.prompt em) {
 		color: var(--ink-3);

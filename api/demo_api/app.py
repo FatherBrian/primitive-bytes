@@ -39,10 +39,11 @@ from starlette.responses import JSONResponse, Response, StreamingResponse
 from starlette.routing import Route
 
 from demo_api.agent import ClaudeModel, Model, run
+from demo_api.feed import card
 from demo_api.limits import Limits
 from demo_api.scenarios import SCENARIOS
 from demo_api.store import RunStore
-from demo_api.world.playground import PRESETS, PROMPTS, ConfigError, parse, playground
+from demo_api.world.playground import MAX_QUESTION, PRESETS, PROMPTS, ConfigError, parse, playground
 from demo_api.world.servers import TASKS, World
 from demo_api.world.views import MIME as VIEW_MIME
 
@@ -110,6 +111,7 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
         except ConfigError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         option = json.dumps(config.as_dict(), separators=(",", ":"))
+        listed = config.listed
 
         def build(_option: str) -> Any:
             return playground(world, config)
@@ -121,6 +123,7 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
         option = str(body.get("option", options[0]))
         if option not in options:
             return JSONResponse({"error": f"option must be one of {list(options)}"}, status_code=400)
+        listed = True
     why = LIMITS.check(_visitor(request))
     if why:
         return JSONResponse({"error": why}, status_code=429)
@@ -147,7 +150,8 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
                 LIMITS.record(spent)
                 if any(e["type"] == "done" for e in saved):
                     try:
-                        STORE.save(run_id, scenario_name, option, saved, spent)
+                        STORE.save(run_id, scenario_name, option, saved, spent,
+                                   listed=listed, card=card(scenario_name, saved))
                     except Exception:  # a lost save never breaks the live run
                         pass
 
@@ -195,6 +199,7 @@ async def world_describe(_request: Request) -> JSONResponse:
     out = world.describe() | {
         "prompts": [{"id": p.id, "label": p.label, "text": p.text} for p in PROMPTS.values()],
         "presets": PRESETS,
+        "max_question": MAX_QUESTION,
     }
     return JSONResponse(out, headers={"Cache-Control": "public, max-age=300"})
 
@@ -236,6 +241,15 @@ async def world_call(request: Request) -> JSONResponse:
     return JSONResponse(await world.call(str(server), str(tool), args, task))
 
 
+async def recent_runs(request: Request) -> JSONResponse:
+    """The newest listed runs (preset questions only; visitors' own questions never show)."""
+    try:
+        limit = int(request.query_params.get("limit", "20"))
+    except ValueError:
+        limit = 20
+    return JSONResponse({"runs": STORE.recent(limit)}, headers={"Cache-Control": "public, max-age=30"})
+
+
 async def get_run(request: Request) -> JSONResponse:
     saved = STORE.get(request.path_params["run_id"])
     if saved is None:
@@ -249,6 +263,7 @@ app = Starlette(
     routes=[
         Route("/health", health),
         Route("/api/run", run_demo, methods=["POST"]),
+        Route("/api/runs", recent_runs),
         Route("/api/runs/{run_id:str}", get_run),
         Route("/api/world", world_describe),
         Route("/api/world/view", world_view),
