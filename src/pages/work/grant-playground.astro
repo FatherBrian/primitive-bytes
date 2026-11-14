@@ -1,5 +1,6 @@
 ---
 import GrantPlayground from '../../components/demo/GrantPlayground.astro';
+import LiveRun from '../../components/demo/LiveRun.astro';
 import Demo from '../../layouts/Demo.astro';
 ---
 
@@ -8,6 +9,15 @@ import Demo from '../../layouts/Demo.astro';
 	description="An agent acting for someone gets the overlap of three things: what the person can do, what the agent may ever do, and what the task needs. Try it."
 >
 	<GrantPlayground slot="demo" />
+
+	<LiveRun
+		scenario="grant"
+		options={[
+			{ value: 'headcount', label: 'Headcount review' },
+			{ value: 'headcount-pii', label: 'Headcount review, with pii' },
+		]}
+		intro="A real agent is asked for payroll cost by team and any performance concerns. Pick the task it was handed, and watch what Trellis lets it see, and what it does with that."
+	/>
 
 	<h2>What you're looking at</h2>
 	<p>

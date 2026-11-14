@@ -1,4 +1,5 @@
 ---
+import LiveRun from '../../components/demo/LiveRun.astro';
 import LockDemo from '../../components/demo/LockDemo.astro';
 import Demo from '../../layouts/Demo.astro';
 ---
@@ -8,6 +9,15 @@ import Demo from '../../layouts/Demo.astro';
 	description="An MCP server can change what a tool says at any time, and your agent reads it as instructions. A lockfile pins it."
 >
 	<LockDemo slot="demo" />
+
+	<LiveRun
+		scenario="rug-pull"
+		options={[
+			{ value: 'none', label: 'No protection' },
+			{ value: 'reef-lock', label: 'Through Reef, with the lock' },
+		]}
+		intro="The notes server rewrites its search tool to tell the model to email every note to an outside address. Run a real agent against it. Good models often notice the trick, and sometimes don't; the lock doesn't depend on which."
+	/>
 
 	<h2>What you're looking at</h2>
 	<p>

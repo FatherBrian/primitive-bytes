@@ -1,0 +1,262 @@
+---
+// "Run it live": one real agent run on the demo API, streamed step by step.
+interface Props {
+	scenario: string;
+	options: { value: string; label: string }[];
+	intro: string;
+}
+
+const { scenario, options, intro } = Astro.props;
+const api = import.meta.env.PUBLIC_DEMO_API ?? '';
+---
+
+<section class="live" data-live data-api={api} data-scenario={scenario}>
+	<div class="top">
+		<div>
+			<p class="eyebrow">Live · Claude Haiku 5.5</p>
+			<h2>Run it with a real model</h2>
+			<p class="intro">{intro}</p>
+		</div>
+	</div>
+	<div class="controls">
+		{
+			options.map((o, i) => (
+				<label class="opt">
+					<input type="radio" name={`live-${scenario}`} value={o.value} checked={i === 0} />
+					<span>{o.label}</span>
+				</label>
+			))
+		}
+		<button type="button" data-run disabled={!api}>Run</button>
+	</div>
+	<p class="note" data-note>
+		{api ? 'Each run is a real model call through the real Reef and Trellis, on fake data.' : 'Live runs are coming soon.'}
+	</p>
+	<ol class="steps" data-steps aria-live="polite"></ol>
+</section>
+
+<script>
+	type Ev = Record<string, any>;
+	const esc = (s: unknown) =>
+		String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+	for (const root of document.querySelectorAll<HTMLElement>('[data-live]')) {
+		const api = root.dataset.api!;
+		const steps = root.querySelector<HTMLElement>('[data-steps]')!;
+		const note = root.querySelector<HTMLElement>('[data-note]')!;
+		const button = root.querySelector<HTMLButtonElement>('[data-run]')!;
+
+		const add = (cls: string, html: string) => {
+			const li = document.createElement('li');
+			li.className = cls;
+			li.innerHTML = html;
+			steps.appendChild(li);
+		};
+
+		function show(e: Ev) {
+			switch (e.type) {
+				case 'setup':
+					add('setup', `<b>${esc(e.summary)}</b><span>Task: “${esc(e.task)}”</span>`);
+					break;
+				case 'tools':
+					add('tools', `<b>Tools the agent can see</b>${e.tools.map((t: Ev) => `<span><code>${esc(t.name)}</code> ${esc(t.description)}</span>`).join('') || '<span>none</span>'}`);
+					break;
+				case 'thinking':
+					add('thinking', `<b>Thinking</b><span>${esc(e.text)}</span>`);
+					break;
+				case 'text':
+					add('text', `<b>Agent</b><span class="answer">${esc(e.text)}</span>`);
+					break;
+				case 'tool_call':
+					add('call', `<b>Calls <code>${esc(e.name)}</code></b><span><code>${esc(JSON.stringify(e.input))}</code></span>`);
+					break;
+				case 'tool_result':
+					add(e.is_error ? 'result error' : 'result', `<b>${esc(e.name)} returned</b><span><code>${esc(e.text.slice(0, 400))}</code></span>`);
+					break;
+				case 'ledger':
+					add('ledger', `<b>Ledger</b>${e.entries.map((l: Ev) => `<span>#${l.seq} ${esc(l.what)}${l.why ? ` · ${esc(l.why)}` : ''}</span>`).join('')}`);
+					break;
+				case 'server':
+					add('server', `<b>What the ${esc(e.server)} server actually received</b><span>${e.calls.length ? e.calls.map((c: Ev) => `<code>${esc(c.tool)}</code>`).join(' ') : 'nothing'}</span>`);
+					break;
+				case 'error':
+					add('error', `<b>Stopped</b><span>${esc(e.message)}</span>`);
+					break;
+				case 'done':
+					note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
+					break;
+			}
+		}
+
+		button.addEventListener('click', async () => {
+			const option = root.querySelector<HTMLInputElement>('input[type=radio]:checked')?.value;
+			steps.innerHTML = '';
+			note.textContent = 'Running…';
+			button.disabled = true;
+			try {
+				const res = await fetch(`${api}/api/run`, {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ scenario: root.dataset.scenario, option }),
+				});
+				if (!res.ok || !res.body) {
+					const body = await res.json().catch(() => ({}));
+					note.textContent = body.error ?? `The demo server said ${res.status}.`;
+					return;
+				}
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = '';
+				for (;;) {
+					const { value, done } = await reader.read();
+					if (done) break;
+					buffer += decoder.decode(value, { stream: true });
+					let cut;
+					while ((cut = buffer.indexOf('\n\n')) >= 0) {
+						const chunk = buffer.slice(0, cut);
+						buffer = buffer.slice(cut + 2);
+						if (chunk.startsWith('data: ')) show(JSON.parse(chunk.slice(6)));
+					}
+				}
+			} catch {
+				note.textContent = "Couldn't reach the demo server. Try again in a minute.";
+			} finally {
+				button.disabled = false;
+			}
+		});
+	}
+</script>
+
+<style>
+	.live {
+		margin: 2.5rem 0;
+		padding: 1.5rem;
+		border: 1px solid var(--accent);
+		border-radius: var(--radius);
+		background: linear-gradient(180deg, var(--accent-wash), transparent 140px), var(--paper);
+	}
+	.eyebrow {
+		margin: 0 0 0.4rem;
+		color: var(--accent-ink);
+	}
+	h2 {
+		margin: 0 0 0.4rem;
+		font-size: 1.35rem;
+	}
+	.intro {
+		margin: 0;
+		color: var(--ink-2);
+		font-size: 0.95rem;
+		line-height: 1.55;
+	}
+	.controls {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		margin-top: 1.1rem;
+	}
+	.opt {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper);
+		font-size: 0.88rem;
+		cursor: pointer;
+	}
+	.opt:has(input:checked) {
+		border-color: var(--accent);
+		color: var(--accent-ink);
+	}
+	button {
+		margin-left: auto;
+		padding: 0.5rem 1.25rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--accent);
+		color: #fff;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	button:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.note {
+		margin: 0.8rem 0 0;
+		color: var(--ink-3);
+		font-size: 0.85rem;
+	}
+	.steps {
+		margin: 1rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.steps :global(li) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.7rem 0.85rem;
+		margin-bottom: 0.5rem;
+		border-left: 3px solid var(--rule);
+		border-radius: 0 8px 8px 0;
+		background: var(--paper-2);
+		font-size: 0.88rem;
+		color: var(--ink-2);
+		animation: in 0.25s ease;
+	}
+	.steps :global(li b) {
+		color: var(--ink);
+		font-size: 0.8rem;
+		font-weight: 600;
+	}
+	.steps :global(li code) {
+		font-size: 0.78rem;
+		word-break: break-word;
+	}
+	.steps :global(li.thinking) {
+		border-left-color: var(--ink-3);
+		font-style: italic;
+	}
+	.steps :global(li.text) {
+		border-left-color: var(--accent);
+	}
+	.steps :global(.answer) {
+		white-space: pre-wrap;
+		color: var(--ink);
+	}
+	.steps :global(li.call),
+	.steps :global(li.result) {
+		border-left-color: #4f7cd1;
+	}
+	.steps :global(li.ledger) {
+		border-left-color: #2e9a5a;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.78rem;
+	}
+	.steps :global(li.server) {
+		border-left-color: #b8860b;
+	}
+	.steps :global(li.error) {
+		border-left-color: #d64541;
+	}
+	@keyframes in {
+		from {
+			opacity: 0;
+			transform: translateY(4px);
+		}
+	}
+	@media (max-width: 640px) {
+		.live {
+			padding: 1rem;
+		}
+		button {
+			margin-left: 0;
+			width: 100%;
+		}
+	}
+</style>
