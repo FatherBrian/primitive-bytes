@@ -78,6 +78,8 @@ class Setup:
     tools: Tools
     describe: dict[str, Any]
     trellis: Trellis | None = None
+    # Earlier turns of a chat, oldest first: {"role": "user" | "assistant", "text": ...}.
+    history: list[dict[str, str]] = field(default_factory=list)
     servers: dict[str, SampleServer] = field(default_factory=dict)
 
     def ledger(self, after: int = 0) -> list[LedgerEvent]:

@@ -6,19 +6,16 @@ import { allEntries } from '../../lib/posts';
 
 const entries = await allEntries();
 const years = [...new Set(entries.map((e) => e.pubDate.getFullYear()))];
-const posts = entries.filter((e) => e.kind === 'post').length;
-const notes = entries.length - posts;
-const count = (n: number, one: string) => `${n} ${n === 1 ? one : `${one}s`}`;
 ---
 
 <Page title="Writing" description={SITE_DESCRIPTION}>
 	<section class="wrap">
 		<header class="head">
 			<p class="eyebrow">Writing</p>
-			<h1>Everything, newest first.</h1>
+			<h1>Writing</h1>
 			<p class="dek">
-				{count(posts, 'post')}{notes > 0 && <> and {count(notes, 'note')}</>}, about data, AI and
-				whatever I'm building.
+				Posts and notes on data platforms, governance, and AI agents, and what I learn building
+				them.
 			</p>
 		</header>
 		{

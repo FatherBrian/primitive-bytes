@@ -92,7 +92,10 @@ async def run(setup: Setup, model: Model) -> AsyncIterator[dict[str, Any]]:
     tools = [_tool_param(t) for t in listed]
     # MCP Apps: tools that name a view get their result drawn by it (on the page, not here).
     views = {t.name: ((t.meta or {}).get("ui") or {}).get("resourceUri") for t in listed}
-    messages: list[dict[str, Any]] = [{"role": "user", "content": setup.task}]
+    # A chat's earlier turns come first (text only), then this turn's question.
+    messages: list[dict[str, Any]] = [
+        {"role": h["role"], "content": h["text"]} for h in setup.history
+    ] + [{"role": "user", "content": setup.task}]
     spent = 0.0
     for _turn in range(MAX_TURNS):
         params: dict[str, Any] = {

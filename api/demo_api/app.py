@@ -2,7 +2,9 @@
 
     uvicorn demo_api.app:app --port 8080
 
-Request body: {"scenario": "rug-pull", "option": "reef-lock"}. The response is
+Request body: {"scenario": "rug-pull", "option": "reef-lock"}, or for the playground
+{"scenario": "playground", "config": {...}, "history": [{"role": "user", "text": ...}, ...]},
+where history is a chat's earlier turns (text only, the last few kept). The response is
 text/event-stream, one JSON event per `data:` line (see demo_api.agent for the event types).
 
 Environment:
@@ -43,7 +45,16 @@ from demo_api.feed import card
 from demo_api.limits import Limits
 from demo_api.scenarios import SCENARIOS
 from demo_api.store import RunStore
-from demo_api.world.playground import MAX_QUESTION, PRESETS, PROMPTS, ConfigError, parse, playground
+from demo_api.world.playground import (
+    MAX_HISTORY,
+    MAX_QUESTION,
+    PRESETS,
+    PROMPTS,
+    ConfigError,
+    history,
+    parse,
+    playground,
+)
 from demo_api.world.servers import TASKS, World
 from demo_api.world.views import MIME as VIEW_MIME
 
@@ -91,6 +102,7 @@ async def health(_request: Request) -> JSONResponse:
         {
             "ok": True,
             "live": LIMITS.enabled,
+            "chat": {"history": MAX_HISTORY},
             "budget_left_today_usd": round(max(0.0, LIMITS.daily_budget_usd - LIMITS.spent_today()), 4),
             "scenarios": {name: list(options) for name, (_, _, options) in SCENARIOS.items()},
         }
@@ -108,13 +120,15 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
         world = await _get_world()
         try:
             config = parse(body.get("config"), world)
+            earlier = history(body.get("history"))
         except ConfigError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
         option = json.dumps(config.as_dict(), separators=(",", ":"))
-        listed = config.listed
+        # A follow-up carries the visitor's earlier words, so it never shows in the feed.
+        listed = config.listed and not earlier
 
         def build(_option: str) -> Any:
-            return playground(world, config)
+            return playground(world, config, earlier)
     else:
         scenario = SCENARIOS.get(scenario_name)
         if scenario is None:

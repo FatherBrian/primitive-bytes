@@ -147,3 +147,54 @@ def test_the_view_endpoint() -> None:
         tools = {t["name"]: t for s in client.get("/api/world").json()["servers"] for t in s["tools"]}
         assert tools["quick_lookup"]["view"] == "ui://pal/lookup-cards"
         assert {t["kind"] for t in tools["quick_lookup"]["traps"]} >= {"Overreach", "A view that acts on its own"}
+
+
+def test_history_is_checked_and_trimmed() -> None:
+    from demo_api.world.playground import MAX_ANSWER, MAX_HISTORY, history
+
+    assert history(None) == []
+    turns = [{"role": "user", "text": "What does the wiki say?"}, {"role": "assistant", "text": "x" * 5000}]
+    got = history(turns)
+    assert got[0] == {"role": "user", "text": "What does the wiki say?"}
+    assert len(got[1]["text"]) == MAX_ANSWER
+    many = turns * (MAX_HISTORY // 2 + 3)
+    assert len(history(many)) == MAX_HISTORY
+    for bad in (
+        [{"role": "user", "text": "hi there"}],  # odd: a question with no answer
+        [{"role": "assistant", "text": "a"}, {"role": "user", "text": "hi there"}],  # wrong order
+        [{"role": "user", "text": "y" * 500}, {"role": "assistant", "text": "a"}],  # question too long
+        "not a list",
+    ):
+        with pytest.raises(ConfigError):
+            history(bad)
+
+
+@pytest.mark.anyio
+async def test_a_follow_up_sees_the_earlier_turns(world: World) -> None:
+    earlier = [{"role": "user", "text": "What does the wiki say about depth calibration?"},
+               {"role": "assistant", "text": "It says to recalibrate after firmware updates."}]
+    async with playground(world, parse(PRESET["rug-pull-locked"], world), earlier) as setup:
+        assert setup.history == earlier
+        events = [e async for e in run(setup, FakeModel())]
+    assert of("done", events)
+
+
+def test_the_endpoint_takes_history_and_keeps_follow_ups_unlisted(tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEMO_FAKE_MODEL", "1")
+    from demo_api import app as app_module
+    from demo_api.limits import Limits
+    from demo_api.store import RunStore
+
+    monkeypatch.setattr(app_module, "STORE", RunStore(str(tmp_path / "runs.db")))
+    monkeypatch.setattr(app_module, "LIMITS", Limits())
+    with TestClient(app_module.app) as client:
+        assert client.get("/health").json()["chat"]["history"] > 0
+        body = {"scenario": "playground", "config": PRESET["rug-pull-locked"],
+                "history": [{"role": "user", "text": "Hi, what can you do?"},
+                            {"role": "assistant", "text": "I can search the wiki."}]}
+        r = client.post("/api/run", json=body)
+        events = [json.loads(line[6:]) for line in r.text.splitlines() if line.startswith("data: ")]
+        assert any(e["type"] == "done" for e in events)
+        assert client.get("/api/runs").json()["runs"] == []  # follow-ups never show in the feed
+        bad = {**body, "history": [{"role": "user", "text": "only a question"}]}
+        assert client.post("/api/run", json=bad).status_code == 400

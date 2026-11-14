@@ -11,10 +11,10 @@ export interface Project {
 
 export const DEMOS = [
 	{
-		path: '/lab/playground/',
-		title: 'Agent playground',
+		path: '/lab/chat/',
+		title: 'Chat with an agent',
 		blurb:
-			'Wire up an agent in Kelpworks: which servers, which gateway, which grant, what to ask. Then run it with a real model and see what gets through.',
+			'Chat with an agent inside Kelpworks. Change what it can reach, put Reef in front of it, and watch every tool call, view and ledger entry.',
 		kind: 'play',
 	},
 	{
