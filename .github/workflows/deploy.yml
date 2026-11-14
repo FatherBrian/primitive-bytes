@@ -17,6 +17,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # The demo API's address (a repository variable). Unset, live runs say "coming soon".
+      PUBLIC_DEMO_API: ${{ vars.PUBLIC_DEMO_API }}
     steps:
       - uses: actions/checkout@v4
       - uses: withastro/action@v5
