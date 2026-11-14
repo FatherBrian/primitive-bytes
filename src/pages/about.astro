@@ -2,19 +2,106 @@
 import { GITHUB_URL } from '../consts';
 import Page from '../layouts/Page.astro';
 import { url } from '../url';
+
+const LINKEDIN_URL = 'https://www.linkedin.com/in/brian-fotheringham';
 ---
 
-<Page title="About" description="I like data and AI and post about them sometimes, along with random things I build.">
+<Page
+	title="About"
+	description="Brian Fotheringham: data and AI platform architect at GE Aerospace, working on governed data for people and agents."
+>
 	<article class="wrap">
 		<header class="head">
 			<p class="eyebrow">About</p>
 			<h1>About</h1>
 		</header>
 		<div class="prose">
-			<p>I work on data and AI governance and the platforms around them.</p>
-			<p>I like data and AI and post about them sometimes, along with random things I build.</p>
 			<p>
-				<a href={GITHUB_URL}>GitHub</a> · <a href={url('/rss.xml')}>RSS</a>
+				I'm Brian Fotheringham. I'm a data and AI platform architect at GE Aerospace, based in
+				Cleveland. I work on the part of the stack where data meets AI: getting data to people and
+				agents quickly, while keeping clear who owns it, who can use it, and why.
+			</p>
+			<p>
+				My working style is simple. Set a standard, enforce it with tooling instead of memory, roll it
+				out crawl-walk-run, and change it when reality pushes back. I like cloud primitives, small
+				versioned config files, and systems that fail closed.
+			</p>
+
+			<h2>Work</h2>
+			<p>
+				I'm a data and AI architect at GE Aerospace, where I've worked since 2020 across data
+				engineering, data platforms, and architecture. Most of my work now is technical direction:
+				setting architecture and standards for data and AI platforms in a regulated environment, and
+				leading the teams that build them.
+			</p>
+			<p>The kinds of things I've built and used:</p>
+			<ul>
+				<li>
+					<strong>Lakehouses on open table formats.</strong> Apache Iceberg on S3 with Lake Formation
+					and Glue, designed so several platforms read one copy of the data instead of each making
+					their own. Earlier, large data lakes on Spark, Glue, EMR and Apache Hudi.
+				</li>
+				<li>
+					<strong>Governed analytics platforms.</strong> Databricks and Unity Catalog organized by data
+					domain, so each domain owns its data, with catalog federation so data stays usable across
+					platforms.
+				</li>
+				<li>
+					<strong>Ingestion on cloud primitives.</strong> Config-driven, self-service ingestion built on
+					AWS ECS and Batch, handling structured and unstructured sources, in place of a licensed
+					product.
+				</li>
+				<li>
+					<strong>Data contracts.</strong> Contracts on the Open Data Contract Standard that declare a
+					dataset's owner, schema, SLAs, quality checks and classification, enforced in CI/CD.
+				</li>
+				<li>
+					<strong>Attribute-based access control.</strong> Policy frameworks where access follows
+					written policy and data attributes instead of one-off grants, with identity from Microsoft
+					Entra ID.
+				</li>
+				<li>
+					<strong>MCP servers and gateways for agents.</strong> A shared MCP package with identity,
+					policy enforcement, audit and observability built in, plus security review standards for
+					MCP servers.
+				</li>
+				<li>
+					<strong>Observability for agent tooling.</strong> OpenTelemetry streamed through Kinesis
+					Firehose into Iceberg and queried with DuckDB.
+				</li>
+				<li>
+					<strong>Agent platforms.</strong> Publishing and running agents on AWS Bedrock AgentCore and
+					Strands, with ownership, audit and change management built in.
+				</li>
+			</ul>
+
+			<h2>Open source and writing</h2>
+			<ul>
+				<li>
+					<a href="https://github.com/FatherBrian/trellis"><strong>Trellis and Reef</strong></a>:
+					open-source tools that let an AI agent act for a person only within a task's scope. Every
+					tool call passes Cedar policy checks and lands in a hash-chained audit ledger.
+				</li>
+				<li>
+					<a href={url('/blog/primitives-for-agents/')}><strong>Primitives for agents</strong></a>:
+					why agents need small, versioned, tool-enforced config files, and the first one,
+					<code>reef.lock</code>, which pins MCP tool definitions so a changed tool can't slip through.
+				</li>
+				<li>
+					<a href={url('/lab/')}><strong>The Lab</strong></a>: live demos of the ideas I write about.
+				</li>
+			</ul>
+
+			<h2>Education</h2>
+			<ul>
+				<li>M.S. Computer Science, Artificial Intelligence, Georgia Institute of Technology (2026)</li>
+				<li>B.S. Software Engineering and B.S. Information Systems, Miami University (2020)</li>
+			</ul>
+
+			<h2>Elsewhere</h2>
+			<p>
+				<a href={GITHUB_URL}>GitHub</a> · <a href={LINKEDIN_URL}>LinkedIn</a> ·
+				<a href={url('/rss.xml')}>RSS</a>
 			</p>
 		</div>
 	</article>
