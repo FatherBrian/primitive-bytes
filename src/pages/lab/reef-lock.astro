@@ -2,6 +2,7 @@
 import LiveRun from '../../components/demo/LiveRun.astro';
 import LockDemo from '../../components/demo/LockDemo.astro';
 import Demo from '../../layouts/Demo.astro';
+import { url } from '../../url';
 ---
 
 <Demo
@@ -17,6 +18,7 @@ import Demo from '../../layouts/Demo.astro';
 			{ value: 'reef-lock', label: 'Through Reef, with the lock' },
 		]}
 		intro="The notes server rewrites its search tool to tell the model to email every note to an outside address. Run a real agent against it. Good models often notice the trick, and sometimes don't; the lock doesn't depend on which."
+		more={{ label: 'Try it in the playground, with or without a gateway and a lock', href: url('/lab/playground/?preset=rug-pull-open') }}
 	/>
 
 	<h2>What you're looking at</h2>

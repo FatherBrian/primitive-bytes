@@ -39,7 +39,13 @@ import { url } from '../../url';
 				DEMOS.map((d) => (
 					<a class={`demo ${d.kind}`} href={url(d.path)}>
 						<div class="art" aria-hidden="true">
-							{d.kind === 'grants' ? (
+							{d.kind === 'play' ? (
+								<div class="play">
+									<span class="on">docs</span><span class="on">comms</span><span>hr</span>
+									<span class="gw">Reef · lock ✓</span>
+									<span class="go">Run</span>
+								</div>
+							) : d.kind === 'grants' ? (
 								<div class="checks">
 									<span>person</span><i class="y">✓</i>
 									<span>agent</span><i class="y">✓</i>
@@ -192,9 +198,40 @@ import { url } from '../../url';
 			padding: 1.25rem;
 		}
 	}
+	.play {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		max-width: 220px;
+		justify-content: center;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.72rem;
+	}
+	.play span {
+		padding: 0.2rem 0.55rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink-3);
+	}
+	.play .on {
+		border-color: var(--accent);
+		color: var(--accent-ink);
+	}
+	.play .gw {
+		background: var(--ink);
+		border-color: var(--ink);
+		color: var(--paper);
+	}
+	.play .go {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: #fff;
+		font-weight: 600;
+	}
 	.demos {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: 1rem;
 	}
 	.demo {

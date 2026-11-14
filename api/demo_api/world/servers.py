@@ -265,6 +265,7 @@ class WorldTool:
 class Call:
     tool: str
     arguments: dict[str, Any]
+    meta: dict[str, Any] = field(default_factory=dict)  # Reef's decision id, or a run's tag
 
 
 @dataclass
@@ -289,8 +290,8 @@ class WorldServer:
 
         async def on_call_tool(ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
             args = dict(params.arguments or {})
-            self.calls.append(Call(params.name, args))
-            del self.calls[:-200]
+            self.calls.append(Call(params.name, args, dict(params.meta or {})))
+            del self.calls[:-500]
             tool = self.tools.get(params.name)
             if tool is None or not tool.offered:
                 return _error(f"{self.name} has no tool {params.name}")

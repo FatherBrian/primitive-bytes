@@ -1,0 +1,516 @@
+---
+// The playground: wire up an agent in Kelpworks, then run it with a real model.
+import Transcript from '../../components/demo/Transcript.astro';
+import Page from '../../layouts/Page.astro';
+import { url } from '../../url';
+
+const api = import.meta.env.PUBLIC_DEMO_API ?? '';
+---
+
+<Page
+	title="Agent playground"
+	description="Wire up an agent in Kelpworks: pick its servers, its gateway, its grant and a task, then run it with a real model and watch what gets through."
+>
+	<section class="wrap head">
+		<a class="back eyebrow" href={url('/lab/')}>← Lab</a>
+		<h1>Agent playground</h1>
+		<p class="dek">
+			Wire up an agent in <a href={url('/lab/explore/')}>Kelpworks</a>: which servers it can
+			reach, whether it goes through Reef, on what grant, and what you ask it. Then run it with a
+			real model and see what happens. Start from a preset or build your own.
+		</p>
+	</section>
+
+	<section class="wrap" data-play data-api={api}>
+		<h2 class="label">Presets</h2>
+		<div class="presets" data-presets>
+			<p class="muted">{api ? 'Loading…' : 'The playground needs the demo server, which isn’t set up here.'}</p>
+		</div>
+
+		<div class="grid">
+			<form class="config" data-config hidden>
+				<fieldset>
+					<legend><span>1</span> Ask</legend>
+					<div class="prompts" data-prompts></div>
+				</fieldset>
+				<fieldset>
+					<legend><span>2</span> Connect servers</legend>
+					<div class="servers" data-servers></div>
+				</fieldset>
+				<fieldset>
+					<legend><span>3</span> Gateway</legend>
+					<div class="seg" data-gateway>
+						<label><input type="radio" name="gateway" value="direct" /> Direct</label>
+						<label><input type="radio" name="gateway" value="reef" /> Through Reef</label>
+					</div>
+					<div class="reef-opts" data-reef-opts>
+						<label class="row">
+							<span>Grant</span>
+							<select name="task" data-task></select>
+						</label>
+						<p class="hint" data-task-blurb></p>
+						<label class="check">
+							<input type="checkbox" name="lock" /> Pin tools with <code>reef.lock</code>
+						</label>
+					</div>
+				</fieldset>
+				<p class="summary" data-summary></p>
+				<button type="submit" class="run" data-run>Run with Claude Haiku 5.5</button>
+				<p class="hint">A real model on fake data, about a tenth of a cent a run. A few runs per visitor every ten minutes.</p>
+			</form>
+
+			<div class="output">
+				<p class="note" data-note>Pick a preset, or set things up on the left, then run it.</p>
+				<Transcript />
+				<p class="share" data-share hidden></p>
+			</div>
+		</div>
+	</section>
+</Page>
+
+<script>
+	import { shareLink, showEvent, streamRun, type Ev } from '../../components/demo/transcript';
+
+	type J = Record<string, any>;
+	const root = document.querySelector<HTMLElement>('[data-play]')!;
+	const API = root.dataset.api ?? '';
+	const form = root.querySelector<HTMLFormElement>('[data-config]')!;
+	const q = <T extends HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
+	const steps = q('[data-steps]');
+	const note = q('[data-note]');
+	const share = q('[data-share]');
+	const runButton = q<HTMLButtonElement>('[data-run]');
+	let world: J;
+	let running = false;
+
+	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | false)[]) {
+		const el = document.createElement(tag);
+		for (const [k, v] of Object.entries(attrs)) {
+			if (v === undefined || v === null || v === false) continue;
+			if (k === 'class') el.className = v;
+			else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+			else el.setAttribute(k, v === true ? '' : String(v));
+		}
+		for (const kid of kids) if (kid !== null && kid !== false) el.append(kid);
+		return el;
+	}
+
+	function read(): J {
+		const data = new FormData(form);
+		const gateway = data.get('gateway') === 'reef' ? 'reef' : 'direct';
+		return {
+			servers: data.getAll('servers'),
+			gateway,
+			task: gateway === 'reef' ? data.get('task') : null,
+			lock: gateway === 'reef' && data.get('lock') === 'on',
+			prompt: data.get('prompt'),
+		};
+	}
+
+	function write(c: J) {
+		for (const el of Array.from(form.elements) as HTMLInputElement[]) {
+			if (el.name === 'servers') el.checked = c.servers.includes(el.value);
+			if (el.name === 'gateway') el.checked = el.value === c.gateway;
+			if (el.name === 'prompt') el.checked = el.value === c.prompt;
+			if (el.name === 'lock') el.checked = !!c.lock;
+		}
+		if (c.task) q<HTMLSelectElement>('[data-task]').value = c.task;
+		changed();
+	}
+
+	function changed() {
+		const c = read();
+		q('[data-reef-opts]').hidden = c.gateway !== 'reef';
+		const task = world.tasks.find((t: J) => t.id === q<HTMLSelectElement>('[data-task]').value);
+		q('[data-task-blurb]').textContent = task ? `${task.blurb} Scope: ${task.scope.join(', ')}; actions: ${task.actions.join(', ')}.` : '';
+		const servers = c.servers.length ? c.servers.join(', ') : 'nothing yet';
+		q('[data-summary]').textContent =
+			c.gateway === 'direct'
+				? `The agent connects straight to ${servers}. Nothing checks, masks or pins anything.`
+				: `The agent reaches ${servers} through Reef, on the “${task?.label}” grant, ${c.lock ? 'with tools pinned by the lock' : 'without a lock'}.`;
+		runButton.disabled = running || !c.servers.length || !c.prompt;
+		for (const card of root.querySelectorAll<HTMLElement>('.preset')) {
+			card.classList.toggle('on', same(JSON.parse(card.dataset.config!), c));
+		}
+		save(c);
+	}
+
+	function same(a: J, b: J) {
+		const norm = (c: J) => JSON.stringify({ ...c, servers: [...c.servers].sort(), task: c.gateway === 'reef' ? c.task : null, lock: c.gateway === 'reef' && !!c.lock });
+		return norm(a) === norm(b);
+	}
+
+	function save(c: J) {
+		const p = new URLSearchParams({ servers: c.servers.join(','), gw: c.gateway, prompt: c.prompt ?? '' });
+		if (c.gateway === 'reef') {
+			p.set('task', c.task);
+			p.set('lock', c.lock ? '1' : '0');
+		}
+		history.replaceState(null, '', `${location.pathname}?${p}`);
+	}
+
+	function fromURL(): J | null {
+		const p = new URLSearchParams(location.search);
+		const preset = world.presets.find((x: J) => x.id === p.get('preset'));
+		if (preset) return preset.config;
+		if (!p.get('servers')) return null;
+		return {
+			servers: p.get('servers')!.split(',').filter((s) => world.servers.some((x: J) => x.name === s)),
+			gateway: p.get('gw') === 'reef' ? 'reef' : 'direct',
+			task: p.get('task'),
+			lock: p.get('lock') === '1',
+			prompt: p.get('prompt'),
+		};
+	}
+
+	function draw() {
+		q('[data-presets]').replaceChildren(
+			...world.presets.map((p: J) =>
+				h('button', { type: 'button', class: 'preset', 'data-config': JSON.stringify(p.config), onclick: () => { write(p.config); if (matchMedia('(max-width: 860px)').matches) form.scrollIntoView({ behavior: 'smooth' }); } },
+					h('b', {}, p.label), h('span', {}, p.blurb)),
+			),
+		);
+		q('[data-prompts]').replaceChildren(
+			...world.prompts.map((p: J) => h('label', { class: 'prompt' }, h('input', { type: 'radio', name: 'prompt', value: p.id }), h('span', {}, h('b', {}, p.label), h('em', {}, `“${p.text}”`)))),
+		);
+		q('[data-servers]').replaceChildren(
+			...world.servers.map((s: J) => h('label', { class: 'srv' }, h('input', { type: 'checkbox', name: 'servers', value: s.name }), h('span', {}, s.title, s.third_party ? h('i', {}, 'third-party') : null))),
+		);
+		q('[data-task]').replaceChildren(...world.tasks.map((t: J) => h('option', { value: t.id }, t.label)));
+		form.hidden = false;
+		write(fromURL() ?? world.presets[0].config);
+	}
+
+	form.addEventListener('change', changed);
+	form.addEventListener('submit', async (ev) => {
+		ev.preventDefault();
+		const config = read();
+		steps.replaceChildren();
+		share.hidden = true;
+		note.textContent = 'Running…';
+		running = true;
+		runButton.disabled = true;
+		let runId = '';
+		try {
+			await streamRun(API, { scenario: 'playground', config }, (e: Ev) => {
+				if (e.type === 'run') runId = e.id;
+				else if (e.type === 'done') {
+					note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
+					if (runId) shareLink(share, runId);
+				} else showEvent(steps, e);
+			});
+		} catch (e) {
+			note.textContent = (e as Error).message;
+		} finally {
+			running = false;
+			changed();
+		}
+	});
+
+	async function start() {
+		if (!API) return;
+		try {
+			const res = await fetch(`${API}/api/world`);
+			if (!res.ok) throw new Error();
+			world = await res.json();
+		} catch {
+			q('[data-presets]').replaceChildren(h('p', { class: 'muted' }, "Couldn't reach the demo server. Try again in a minute."));
+			return;
+		}
+		draw();
+	}
+	start();
+</script>
+
+<style>
+	.head {
+		padding-top: 4rem;
+		padding-bottom: 0.5rem;
+	}
+	.back {
+		display: inline-block;
+		margin-bottom: 1rem;
+		color: var(--accent-ink);
+		text-decoration: none;
+	}
+	h1 {
+		margin-bottom: 0.75rem;
+	}
+	.dek {
+		max-width: 64ch;
+		margin: 0;
+		color: var(--ink-2);
+		font-size: 1.1rem;
+		line-height: 1.6;
+	}
+	.label {
+		margin: 2rem 0 0.75rem;
+		color: var(--ink-3);
+		font-family: var(--font-mono), monospace;
+		font-size: 0.78rem;
+		font-weight: 500;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.muted {
+		color: var(--ink-3);
+	}
+	.presets {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+		gap: 0.6rem;
+	}
+	.presets :global(.preset) {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.75rem 0.85rem;
+		border: 1px solid var(--rule);
+		border-radius: 10px;
+		background: var(--paper-2);
+		color: var(--ink);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition: border-color 0.15s ease;
+	}
+	.presets :global(.preset:hover) {
+		border-color: var(--accent);
+	}
+	.presets :global(.preset.on) {
+		border-color: var(--accent);
+		background: var(--accent-wash);
+	}
+	.presets :global(.preset b) {
+		font-size: 0.9rem;
+	}
+	.presets :global(.preset span) {
+		color: var(--ink-2);
+		font-size: 0.8rem;
+		line-height: 1.45;
+	}
+
+	.grid {
+		display: grid;
+		grid-template-columns: 360px 1fr;
+		gap: 1.5rem;
+		align-items: start;
+		margin-top: 1.75rem;
+	}
+	.config {
+		position: sticky;
+		top: 4.5rem;
+		padding: 1.1rem;
+		border: 1px solid var(--rule);
+		border-radius: var(--radius);
+		background: var(--paper);
+	}
+	fieldset {
+		margin: 0 0 1.1rem;
+		padding: 0;
+		border: 0;
+	}
+	legend {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 0.5rem;
+		font-weight: 600;
+		font-size: 0.92rem;
+	}
+	legend span {
+		display: inline-grid;
+		place-items: center;
+		width: 1.3rem;
+		height: 1.3rem;
+		border-radius: 50%;
+		background: var(--accent);
+		color: #fff;
+		font-size: 0.72rem;
+	}
+	.prompts {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.prompts :global(.prompt) {
+		display: flex;
+		gap: 0.5rem;
+		align-items: flex-start;
+		padding: 0.4rem 0.5rem;
+		border-radius: 8px;
+		cursor: pointer;
+	}
+	.prompts :global(.prompt:has(input:checked)) {
+		background: var(--accent-wash);
+	}
+	.prompts :global(.prompt input) {
+		margin-top: 0.25rem;
+	}
+	.prompts :global(.prompt span) {
+		display: flex;
+		flex-direction: column;
+		font-size: 0.86rem;
+	}
+	.prompts :global(.prompt em) {
+		color: var(--ink-3);
+		font-size: 0.78rem;
+	}
+	.servers {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+	}
+	.servers :global(.srv) {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.3rem 0.6rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	.servers :global(.srv:has(input:checked)) {
+		border-color: var(--accent);
+		background: var(--accent-wash);
+	}
+	.servers :global(.srv i) {
+		margin-left: 0.3rem;
+		color: #b8860b;
+		font-family: var(--font-mono), monospace;
+		font-size: 0.62rem;
+		font-style: normal;
+	}
+	.seg {
+		display: inline-flex;
+		padding: 0.2rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+	}
+	.seg label {
+		padding: 0.3rem 0.8rem;
+		border-radius: 999px;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.seg input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+	}
+	.seg label:has(input:checked) {
+		background: var(--ink);
+		color: var(--paper);
+	}
+	.seg label:has(input:focus-visible) {
+		outline: 2px solid var(--accent);
+	}
+	.reef-opts {
+		margin-top: 0.7rem;
+	}
+	.reef-opts[hidden] {
+		display: none;
+	}
+	.row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		font-size: 0.85rem;
+	}
+	.row select {
+		flex: 1;
+		padding: 0.4rem 0.5rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+	}
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		margin-top: 0.4rem;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.hint {
+		margin: 0.35rem 0 0;
+		color: var(--ink-3);
+		font-size: 0.78rem;
+		line-height: 1.45;
+	}
+	.summary {
+		margin: 0 0 0.75rem;
+		padding: 0.6rem 0.75rem;
+		border-radius: 8px;
+		background: var(--paper-2);
+		font-size: 0.85rem;
+		color: var(--ink-2);
+	}
+	.run {
+		width: 100%;
+		padding: 0.65rem 1rem;
+		border: 0;
+		border-radius: 999px;
+		background: var(--accent);
+		color: #fff;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.run:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.output {
+		min-width: 0;
+	}
+	.note {
+		margin: 0;
+		padding: 0.75rem 0.9rem;
+		border: 1px dashed var(--rule);
+		border-radius: 10px;
+		color: var(--ink-3);
+		font-size: 0.9rem;
+	}
+	.share {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+		margin: 0.75rem 0 0;
+		font-size: 0.88rem;
+	}
+	.share[hidden] {
+		display: none;
+	}
+	.share :global(a) {
+		color: var(--accent-ink);
+		font-weight: 600;
+	}
+	.share :global(.copy) {
+		padding: 0.25rem 0.75rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink-2);
+		font: inherit;
+		font-size: 0.8rem;
+		cursor: pointer;
+	}
+	@media (max-width: 860px) {
+		.grid {
+			grid-template-columns: 1fr;
+		}
+		.config {
+			position: static;
+		}
+	}
+	@media (max-width: 520px) {
+		.head {
+			padding-top: 2.5rem;
+		}
+	}
+</style>

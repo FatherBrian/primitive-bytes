@@ -139,7 +139,7 @@ const notes = (await allNotes()).map(noteEntry);
 	}
 	.demo-row {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(3, 1fr);
 		gap: 1rem;
 		margin-top: 0.75rem;
 	}

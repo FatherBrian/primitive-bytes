@@ -28,7 +28,7 @@ import json
 import os
 import time
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from starlette.applications import Starlette
@@ -42,6 +42,7 @@ from demo_api.agent import ClaudeModel, Model, run
 from demo_api.limits import Limits
 from demo_api.scenarios import SCENARIOS
 from demo_api.store import RunStore
+from demo_api.world.playground import PRESETS, PROMPTS, ConfigError, parse, playground
 from demo_api.world.servers import TASKS, World
 
 
@@ -99,18 +100,29 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
         body: dict[str, Any] = await request.json()
     except ValueError:
         return JSONResponse({"error": "send JSON"}, status_code=400)
-    scenario = SCENARIOS.get(str(body.get("scenario")))
-    if scenario is None:
-        return JSONResponse({"error": f"scenario must be one of {sorted(SCENARIOS)}"}, status_code=400)
-    build, _option_name, options = scenario
-    option = str(body.get("option", options[0]))
-    if option not in options:
-        return JSONResponse({"error": f"option must be one of {list(options)}"}, status_code=400)
+    scenario_name = str(body.get("scenario"))
+    build: Callable[[str], Any]
+    if scenario_name == "playground":
+        world = await _get_world()
+        try:
+            config = parse(body.get("config"), world)
+        except ConfigError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        option = json.dumps(config.as_dict(), separators=(",", ":"))
+
+        def build(_option: str) -> Any:
+            return playground(world, config)
+    else:
+        scenario = SCENARIOS.get(scenario_name)
+        if scenario is None:
+            return JSONResponse({"error": f"scenario must be playground or one of {sorted(SCENARIOS)}"}, status_code=400)
+        build, _option_name, options = scenario
+        option = str(body.get("option", options[0]))
+        if option not in options:
+            return JSONResponse({"error": f"option must be one of {list(options)}"}, status_code=400)
     why = LIMITS.check(_visitor(request))
     if why:
         return JSONResponse({"error": why}, status_code=429)
-
-    scenario_name = str(body.get("scenario"))
 
     async def events() -> AsyncIterator[str]:
         spent = 0.0
@@ -179,7 +191,11 @@ def _browse_limited(request: Request) -> JSONResponse | None:
 
 async def world_describe(_request: Request) -> JSONResponse:
     world = await _get_world()
-    return JSONResponse(world.describe(), headers={"Cache-Control": "public, max-age=300"})
+    out = world.describe() | {
+        "prompts": [{"id": p.id, "label": p.label, "text": p.text} for p in PROMPTS.values()],
+        "presets": PRESETS,
+    }
+    return JSONResponse(out, headers={"Cache-Control": "public, max-age=300"})
 
 
 async def world_view(request: Request) -> JSONResponse:

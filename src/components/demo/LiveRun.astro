@@ -6,9 +6,11 @@ interface Props {
 	scenario: string;
 	options: { value: string; label: string }[];
 	intro: string;
+	/** A link to take it further, e.g. the same setup as a playground preset. */
+	more?: { label: string; href: string };
 }
 
-const { scenario, options, intro } = Astro.props;
+const { scenario, options, intro, more } = Astro.props;
 const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 ---
 
@@ -36,10 +38,11 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	</p>
 	<Transcript />
 	<p class="share" data-share hidden></p>
+	{more && <a class="more" href={more.href}>{more.label} →</a>}
 </section>
 
 <script>
-	import { runLink, showEvent, type Ev } from './transcript';
+	import { shareLink, showEvent, streamRun, type Ev } from './transcript';
 
 	for (const root of document.querySelectorAll<HTMLElement>('[data-live]')) {
 		const api = root.dataset.api!;
@@ -49,28 +52,12 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		const button = root.querySelector<HTMLButtonElement>('[data-run]')!;
 		let runId = '';
 
-		function offerLink() {
-			const link = runLink(runId);
-			const a = document.createElement('a');
-			a.href = link;
-			a.textContent = 'Link to this run';
-			const copy = document.createElement('button');
-			copy.type = 'button';
-			copy.className = 'copy';
-			copy.textContent = 'Copy link';
-			copy.addEventListener('click', () => {
-				navigator.clipboard?.writeText(link).then(() => (copy.textContent = 'Copied'));
-			});
-			share.replaceChildren(a, copy);
-			share.hidden = false;
-		}
-
 		function show(e: Ev) {
 			if (e.type === 'run') {
 				runId = e.id;
 			} else if (e.type === 'done') {
 				note.textContent = `Done. This run cost $${Number(e.cost_usd).toFixed(4)}.`;
-				if (runId) offerLink();
+				if (runId) shareLink(share, runId);
 			} else {
 				showEvent(steps, e);
 			}
@@ -84,32 +71,9 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 			note.textContent = 'Running…';
 			button.disabled = true;
 			try {
-				const res = await fetch(`${api}/api/run`, {
-					method: 'POST',
-					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ scenario: root.dataset.scenario, option }),
-				});
-				if (!res.ok || !res.body) {
-					const body = await res.json().catch(() => ({}));
-					note.textContent = body.error ?? `The demo server said ${res.status}.`;
-					return;
-				}
-				const reader = res.body.getReader();
-				const decoder = new TextDecoder();
-				let buffer = '';
-				for (;;) {
-					const { value, done } = await reader.read();
-					if (done) break;
-					buffer += decoder.decode(value, { stream: true });
-					let cut;
-					while ((cut = buffer.indexOf('\n\n')) >= 0) {
-						const chunk = buffer.slice(0, cut);
-						buffer = buffer.slice(cut + 2);
-						if (chunk.startsWith('data: ')) show(JSON.parse(chunk.slice(6)));
-					}
-				}
-			} catch {
-				note.textContent = "Couldn't reach the demo server. Try again in a minute.";
+				await streamRun(api, { scenario: root.dataset.scenario, option }, show);
+			} catch (e) {
+				note.textContent = (e as Error).message;
 			} finally {
 				button.disabled = false;
 			}
@@ -188,6 +152,13 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		gap: 0.75rem;
 		margin: 0.75rem 0 0;
 		font-size: 0.88rem;
+	}
+	.more {
+		display: inline-block;
+		margin-top: 1rem;
+		color: var(--accent-ink);
+		font-size: 0.9rem;
+		font-weight: 600;
 	}
 	.share[hidden] {
 		display: none;

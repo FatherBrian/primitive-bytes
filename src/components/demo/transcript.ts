@@ -15,7 +15,7 @@ function add(steps: HTMLElement, cls: string, html: string) {
 export function showEvent(steps: HTMLElement, e: Ev): boolean {
 	switch (e.type) {
 		case 'setup':
-			add(steps, 'setup', `<b>${esc(e.summary)}</b><span>Task: “${esc(e.task)}”</span>`);
+			add(steps, 'setup', `<b>${esc(e.summary)}</b><span>Asked: “${esc(e.task)}”</span>`);
 			return true;
 		case 'tools':
 			add(
@@ -60,6 +60,58 @@ export function showEvent(steps: HTMLElement, e: Ev): boolean {
 		default:
 			return false;
 	}
+}
+
+/**
+ * Start a live run and hand each streamed event to onEvent. Resolves when the stream ends;
+ * throws an Error with a message fit to show if the server refuses or can't be reached.
+ */
+export async function streamRun(api: string, body: unknown, onEvent: (e: Ev) => void): Promise<void> {
+	let res: Response;
+	try {
+		res = await fetch(`${api}/api/run`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body),
+		});
+	} catch {
+		throw new Error("Couldn't reach the demo server. Try again in a minute.");
+	}
+	if (!res.ok || !res.body) {
+		const err = await res.json().catch(() => ({}));
+		throw new Error(err.error ?? `The demo server said ${res.status}.`);
+	}
+	const reader = res.body.getReader();
+	const decoder = new TextDecoder();
+	let buffer = '';
+	for (;;) {
+		const { value, done } = await reader.read();
+		if (done) break;
+		buffer += decoder.decode(value, { stream: true });
+		let cut;
+		while ((cut = buffer.indexOf('\n\n')) >= 0) {
+			const chunk = buffer.slice(0, cut);
+			buffer = buffer.slice(cut + 2);
+			if (chunk.startsWith('data: ')) onEvent(JSON.parse(chunk.slice(6)));
+		}
+	}
+}
+
+/** A share link and copy button for a finished run. */
+export function shareLink(into: HTMLElement, id: string) {
+	const link = runLink(id);
+	const a = document.createElement('a');
+	a.href = link;
+	a.textContent = 'Link to this run';
+	const copy = document.createElement('button');
+	copy.type = 'button';
+	copy.className = 'copy';
+	copy.textContent = 'Copy link';
+	copy.addEventListener('click', () => {
+		navigator.clipboard?.writeText(link).then(() => (copy.textContent = 'Copied'));
+	});
+	into.replaceChildren(a, copy);
+	into.hidden = false;
 }
 
 /** Where a saved run can be replayed. */

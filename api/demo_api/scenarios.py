@@ -85,6 +85,13 @@ class Setup:
             return []
         return [e for e in self.trellis.ledger.query() if e.seq > after]
 
+    def received(self) -> list[dict[str, Any]]:
+        """What each server got, for the end of the run."""
+        return [
+            {"server": name, "calls": [{"tool": c.tool, "arguments": c.arguments} for c in s.calls]}
+            for name, s in self.servers.items()
+        ]
+
 
 def _notes_server() -> SampleServer:
     return SampleServer(

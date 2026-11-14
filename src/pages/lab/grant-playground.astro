@@ -2,6 +2,7 @@
 import GrantPlayground from '../../components/demo/GrantPlayground.astro';
 import LiveRun from '../../components/demo/LiveRun.astro';
 import Demo from '../../layouts/Demo.astro';
+import { url } from '../../url';
 ---
 
 <Demo
@@ -17,6 +18,7 @@ import Demo from '../../layouts/Demo.astro';
 			{ value: 'headcount-pii', label: 'Headcount review, with pii' },
 		]}
 		intro="A real agent is asked for payroll cost by team and any performance concerns. Pick the task it was handed, and watch what Trellis lets it see, and what it does with that."
+		more={{ label: 'Try more grants in the agent playground', href: url('/lab/playground/?preset=payroll-headcount') }}
 	/>
 
 	<h2>What you're looking at</h2>

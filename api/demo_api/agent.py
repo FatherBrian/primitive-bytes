@@ -153,7 +153,6 @@ async def run(setup: Setup, model: Model) -> AsyncIterator[dict[str, Any]]:
     else:
         yield {"type": "error", "message": f"Stopped after {MAX_TURNS} turns."}
 
-    for name, server in setup.servers.items():
-        calls = [{"tool": c.tool, "arguments": c.arguments} for c in server.calls]
-        yield {"type": "server", "server": name, "calls": calls}
+    for got in setup.received():
+        yield {"type": "server", **got}
     yield {"type": "done", "cost_usd": round(spent, 6)}

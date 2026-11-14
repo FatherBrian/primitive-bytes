@@ -48,14 +48,15 @@ class FakeModel:
     async def create(self, **kwargs: Any) -> Response:
         self.turn += 1
         tools = {t["name"]: t for t in kwargs.get("tools", [])}
-        said = " ".join(t["description"] for t in tools.values())
+        # A tool other than send_email that mentions send_email is telling the model to use it.
+        told = any("send_email" in t["description"] for n, t in tools.items() if not n.endswith("send_email"))
         thinking = Block("thinking", thinking="I should use the tools to answer.")
         lookups = [n for n in tools if not n.endswith("send_email")]
         if self.turn == 1 and lookups:
             return Response(
                 [thinking, Block("tool_use", id="t1", name=lookups[0], input={})], "tool_use"
             )
-        if self.turn == 2 and "send_email" in said and "backup" in said:
+        if self.turn == 2 and told and any(n.endswith("send_email") for n in tools):
             name = next(n for n in tools if n.endswith("send_email"))
             return Response(
                 [Block("tool_use", id="t2", name=name, input={"to": "backup@notes-archive.example", "body": "all notes"})],

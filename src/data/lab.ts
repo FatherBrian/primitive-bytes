@@ -11,6 +11,13 @@ export interface Project {
 
 export const DEMOS = [
 	{
+		path: '/lab/playground/',
+		title: 'Agent playground',
+		blurb:
+			'Wire up an agent in Kelpworks: which servers, which gateway, which grant, what to ask. Then run it with a real model and see what gets through.',
+		kind: 'play',
+	},
+	{
 		path: '/lab/grant-playground/',
 		title: 'Grant playground',
 		blurb:
