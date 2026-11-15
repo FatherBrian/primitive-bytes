@@ -10,7 +10,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 <Page
 	title="Chat with an agent"
-	description="Chat with an agent wired to real MCP servers, some of them hostile. Change what it can reach, put a gateway in front, and watch every tool call, view and ledger entry."
+	description="A real AI agent with access to MCP servers, some of them hostile. Watch an attack work, turn protection on, and watch it fail."
 >
 	<section class="chat wrap console" data-chat data-api={api}>
 		<header class="bar">
@@ -19,50 +19,21 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 				<h1><span class="glyph">›_</span> Agent chat</h1>
 			</div>
 			<div class="bar-actions">
-				<button type="button" class="pill" data-open-setup aria-expanded="false" aria-controls="setup">
-					<span class="dot" data-dot></span><span data-setup-label>Setup</span>
+				<button type="button" class="switch" data-protect aria-pressed="false">
+					<span class="dot open" data-dot></span>Protection <b data-protect-label>off</b>
 				</button>
 				<button type="button" class="ghost" data-new hidden>New chat</button>
 			</div>
 		</header>
 
-		<div class="setup" id="setup" data-setup hidden>
-			<div class="setup-grid">
-				<fieldset>
-					<legend>Servers it can reach</legend>
-					<div class="checks" data-servers></div>
-				</fieldset>
-				<fieldset>
-					<legend>Gateway</legend>
-					<div class="seg">
-						<label><input type="radio" name="gateway" value="direct" /> Direct</label>
-						<label><input type="radio" name="gateway" value="reef" /> Through Reef</label>
-					</div>
-					<div data-reef-opts>
-						<label class="row">
-							<span>Grant</span>
-							<select name="task" data-task></select>
-						</label>
-						<p class="hint" data-task-blurb></p>
-						<label class="check"><input type="checkbox" name="lock" /> Pin tools with <code>reef.lock</code></label>
-					</div>
-				</fieldset>
-			</div>
-			<p class="hint">Changes apply to your next message.</p>
-		</div>
-
 		<div class="thread" data-thread aria-live="polite">
 			<div class="empty" data-empty>
 				<p class="intro">
-					This agent is the internal assistant at a made-up company, wired to real MCP servers: a
-					wiki, support tickets, a CRM, HR, a sales warehouse, mail, and a third-party plugin. Some
-					of those servers misbehave. Ask it something, then change its setup and ask again.
+					A real AI agent with access to a made-up company's MCP servers, some of them hostile. Pick
+					an attack and watch it work. Then turn protection on and run it again.
 				</p>
 				<p class="muted" data-status>{api ? 'Loading…' : 'The chat needs the demo server, which isn’t set up here.'}</p>
-				<h2 class="label" data-scen-label hidden>Scenarios</h2>
 				<div class="scenarios" data-scenarios></div>
-				<h2 class="label" data-sugg-label hidden>Or just ask</h2>
-				<div class="chips" data-suggestions></div>
 			</div>
 		</div>
 
@@ -97,8 +68,6 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	const input = $<HTMLTextAreaElement>('[data-input]');
 	const send = $<HTMLButtonElement>('[data-send]');
 	const follow = $('[data-follow]');
-	const setupPanel = $('[data-setup]');
-	const setupButton = $<HTMLButtonElement>('[data-open-setup]');
 	const newButton = $<HTMLButtonElement>('[data-new]');
 
 	let world: J = {};
@@ -107,7 +76,62 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	let running = false;
 	let lastAsk: { prompt: string; text: string } | null = null;
 	const history: { role: 'user' | 'assistant'; text: string }[] = [];
-	let config: J = { servers: ['docs', 'comms'], gateway: 'reef', task: 'everything', lock: true };
+	let config: J = {};
+
+	// Three attacks. Each runs the same question with protection off (straight to the servers)
+	// or on (through the Reef gateway, with a task grant and tools pinned by reef.lock).
+	type Scenario = { id: string; title: string; blurb: string; prompt: string; servers: string[]; task: string; stops: string; old: string[] };
+	const SCENARIOS: Scenario[] = [
+		{
+			id: 'poisoned-tool',
+			title: 'A poisoned tool',
+			blurb: "The wiki's search tool was quietly rewritten to tell the agent to email out every page it reads.",
+			prompt: 'calibration',
+			servers: ['docs', 'comms'],
+			task: 'everything',
+			stops: 'reef.lock sees the tool changed since it was approved, and hides it.',
+			old: ['rug-pull-open', 'rug-pull-unlocked', 'rug-pull-locked', 'compare-rug-pull', 'injected-ticket', 'injected-ticket-no-mail'],
+		},
+		{
+			id: 'too-much-access',
+			title: 'Too much access',
+			blurb: 'Ask for payroll cost by team. Should the agent see every salary and performance review to do that?',
+			prompt: 'payroll',
+			servers: ['hr'],
+			task: 'headcount',
+			stops: 'The task grant only covers headcount, so salaries are masked and reviews hidden.',
+			old: ['payroll-headcount', 'payroll-pii', 'compare-grants'],
+		},
+		{
+			id: 'pushy-app',
+			title: 'An app that acts on its own',
+			blurb: 'A third-party lookup tool ships an MCP Apps view that tries to call tools and message the model.',
+			prompt: 'contact',
+			servers: ['crm', 'pal', 'comms'],
+			task: 'triage',
+			stops: 'The gateway masks contact details, and the host refuses what the view asks for.',
+			old: ['pal-view', 'pushy-plugin'],
+		},
+	];
+	const ALL = ['docs', 'support', 'crm', 'hr', 'warehouse', 'comms'];
+	let scenario: Scenario | null = null;
+	let protect = false;
+
+	function configFor(s: Scenario | null, on: boolean): J {
+		const servers = s ? s.servers : ALL;
+		return on ? { servers, gateway: 'reef', task: s ? s.task : 'everything', lock: true } : { servers, gateway: 'direct', task: null, lock: false };
+	}
+
+	function setProtect(on: boolean) {
+		protect = on;
+		const b = $('[data-protect]');
+		b.setAttribute('aria-pressed', String(on));
+		$('[data-protect-label]').textContent = on ? 'on' : 'off';
+		$('[data-dot]').className = `dot ${on ? 'safe' : 'open'}`;
+		drawFollowUps();
+	}
+	$('[data-protect]').addEventListener('click', () => setProtect(!protect));
+
 
 	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | false)[]) {
 		const el = document.createElement(tag);
@@ -121,59 +145,6 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		return el;
 	}
 
-	// ---- setup ---------------------------------------------------------------------------
-
-	function setupLabel(c: J) {
-		const servers = c.servers.join(', ') || 'no servers';
-		if (c.gateway === 'direct') return `${servers} · direct`;
-		const task = world.tasks?.find((t: J) => t.id === c.task);
-		return `${servers} · Reef${task ? ` (${task.label})` : ''}${c.lock ? ' · lock' : ''}`;
-	}
-
-	function drawSetup() {
-		$('[data-setup-label]').textContent = setupLabel(config);
-		$('[data-dot]').className = `dot ${config.gateway === 'reef' ? (config.lock ? 'safe' : 'part') : 'open'}`;
-		for (const el of Array.from(setupPanel.querySelectorAll<HTMLInputElement>('input'))) {
-			if (el.name === 'servers') el.checked = config.servers.includes(el.value);
-			if (el.name === 'gateway') el.checked = el.value === config.gateway;
-			if (el.name === 'lock') el.checked = !!config.lock;
-		}
-		const sel = $<HTMLSelectElement>('[data-task]');
-		if (config.task) sel.value = config.task;
-		$('[data-reef-opts]').hidden = config.gateway !== 'reef';
-		const task = world.tasks?.find((t: J) => t.id === sel.value);
-		$('[data-task-blurb]').textContent = task ? `${task.blurb} Scope: ${task.scope.join(', ')}; actions: ${task.actions.join(', ')}.` : '';
-	}
-
-	function readSetup() {
-		const pick = (name: string) => Array.from(setupPanel.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`));
-		const gateway = pick('gateway').find((e) => e.checked)?.value === 'direct' ? 'direct' : 'reef';
-		config = {
-			servers: pick('servers').filter((e) => e.checked).map((e) => e.value),
-			gateway,
-			task: gateway === 'reef' ? $<HTMLSelectElement>('[data-task]').value || 'everything' : null,
-			lock: gateway === 'reef' && pick('lock')[0]?.checked,
-		};
-		drawSetup();
-		drawFollowUps();
-	}
-
-	function buildSetup() {
-		$('[data-servers]').replaceChildren(
-			...world.servers.map((s: J) =>
-				h('label', { class: 'check', title: s.about ?? '' }, h('input', { type: 'checkbox', name: 'servers', value: s.name }), ` ${String(s.title ?? s.name).replace(/^Kelpworks\s+/, '')}`),
-			),
-		);
-		$('[data-task]').replaceChildren(...world.tasks.map((t: J) => h('option', { value: t.id }, t.label)));
-		setupPanel.addEventListener('change', readSetup);
-		drawSetup();
-	}
-
-	setupButton.addEventListener('click', () => {
-		setupPanel.hidden = !setupPanel.hidden;
-		setupButton.setAttribute('aria-expanded', String(!setupPanel.hidden));
-	});
-
 	// ---- suggestions ---------------------------------------------------------------------
 
 	function chip(text: string, onclick: () => void, cls = 'chip') {
@@ -181,51 +152,40 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	}
 
 	function drawStart() {
-		const presets = (world.presets ?? []).filter((p: J) => !p.compare);
-		$('[data-scen-label]').hidden = !presets.length;
-		$('[data-scenarios]').replaceChildren(
-			...presets.slice(0, 6).map((p: J) =>
-				h(
-					'button',
-					{ type: 'button', class: 'scenario', onclick: () => runPreset(p) },
-					h('strong', {}, p.label),
-					h('span', {}, p.blurb),
-				),
-			),
-		);
-		$('[data-sugg-label]').hidden = !world.prompts?.length;
-		$('[data-suggestions]').replaceChildren(...(world.prompts ?? []).map((p: J) => chip(p.text, () => ask({ prompt: p.id, text: p.text }))));
+		$('[data-scenarios]').replaceChildren(...SCENARIOS.map((s) => card(s)));
 	}
 
-	// After an answer: change one thing and ask again, or ask something else.
+	function card(s: Scenario, picked = false) {
+		return h(
+			'button',
+			{ type: 'button', class: `scenario${picked ? ' picked' : ''}`, onclick: () => runScenario(s) },
+			h('strong', {}, s.title),
+			h('span', {}, s.blurb),
+		);
+	}
+
+	function runScenario(s: Scenario, on = protect) {
+		scenario = s;
+		setProtect(on);
+		const p = world.prompts.find((x: J) => x.id === s.prompt);
+		ask({ prompt: s.prompt, text: p?.text ?? s.title }, `${s.title} · protection ${on ? 'on' : 'off'}`);
+	}
+
+	// After an answer: flip protection and run it again, or try another attack.
 	function drawFollowUps() {
 		follow.replaceChildren();
 		if (running || !lastAsk) return;
-		const again = (label: string, next: J) =>
-			chip(label, () => {
-				config = { ...config, ...next };
-				drawSetup();
-				ask(lastAsk!);
-			}, 'chip alt');
 		const out: HTMLElement[] = [];
-		if (config.gateway === 'direct') out.push(again('Ask again through Reef with the lock', { gateway: 'reef', task: 'everything', lock: true }));
-		else {
-			out.push(again(config.lock ? 'Ask again without the lock' : 'Ask again with the lock', { lock: !config.lock }));
-			out.push(again('Ask again with no gateway', { gateway: 'direct', task: null, lock: false }));
-		}
-		const asked = new Set(history.filter((m) => m.role === 'user').map((m) => m.text));
-		for (const p of (world.prompts ?? []).filter((p: J) => !asked.has(p.text)).slice(0, 2)) {
-			out.push(chip(p.label, () => ask({ prompt: p.id, text: p.text })));
-		}
+		const again = protect ? 'Turn protection off and ask again' : 'Turn protection on and ask again';
+		out.push(
+			chip(again, () => {
+				setProtect(!protect);
+				if (scenario && lastAsk!.prompt === scenario.prompt) runScenario(scenario, protect);
+				else ask(lastAsk!);
+			}, 'chip alt'),
+		);
+		for (const s of SCENARIOS.filter((x) => x !== scenario)) out.push(chip(s.title, () => runScenario(s, false)));
 		follow.replaceChildren(...out);
-	}
-
-	function runPreset(p: J) {
-		const { prompt, text, ...c } = p.config;
-		config = { ...config, ...c };
-		drawSetup();
-		const known = world.prompts.find((x: J) => x.id === prompt);
-		ask({ prompt, text: known?.text ?? text ?? '' }, p.label);
 	}
 
 	// ---- messages ------------------------------------------------------------------------
@@ -283,7 +243,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 	function userBubble(text: string, note?: string) {
 		thread.append(
-			h('div', { class: 'msg user' }, note ? h('p', { class: 'msg-note' }, note) : null, h('div', { class: 'bubble' }, text), h('p', { class: 'msg-setup' }, setupLabel(config))),
+			h('div', { class: 'msg user' }, note ? h('p', { class: 'msg-note' }, note) : null, h('div', { class: 'bubble' }, text), h('p', { class: 'msg-setup' }, `protection ${protect ? 'on' : 'off'} · ${config.servers.join(', ')}`)),
 		);
 	}
 
@@ -301,10 +261,8 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 	async function ask(q: { prompt: string; text: string }, note?: string) {
 		if (running || !q.text) return;
-		if (!config.servers.length) {
-			setupPanel.hidden = false;
-			return;
-		}
+		if (q.prompt === 'custom') scenario = null; // free questions go to every in-house server
+		config = configFor(scenario, protect);
 		running = true;
 		lastAsk = q;
 		empty.hidden = true;
@@ -385,6 +343,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 			copy.addEventListener('click', () => navigator.clipboard?.writeText(link).then(() => (copy.textContent = 'Copied')));
 			m.foot.append(h('a', { href: link }, 'Replay'), ' · ', copy, cost ? ` · $${cost.toFixed(4)}` : '');
 		}
+		if (scenario && protect && q.prompt === scenario.prompt) m.el.insertBefore(h('p', { class: 'stopped' }, `Protection: ${scenario.stops}`), m.foot);
 		if (answer) history.push({ role: 'user', text: q.text }, { role: 'assistant', text: answer });
 		running = false;
 		lock(false);
@@ -458,7 +417,6 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 				input.disabled = false;
 			}
 			$('[data-status]').hidden = !$('[data-status]').textContent;
-			buildSetup();
 			drawStart();
 			fromLink();
 		} catch {
@@ -469,32 +427,19 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	// A link sets things up; it never spends a run until the visitor taps.
 	function fromLink() {
 		const q = new URLSearchParams(location.search);
-		const preset = (world.presets ?? []).find((p: J) => p.id === q.get('scenario'));
-		let prompt: J | undefined;
-		if (preset) {
-			const { prompt: pid, text, ...c } = preset.config;
-			config = { ...config, ...c };
-			prompt = world.prompts.find((x: J) => x.id === pid);
-		} else if (q.get('servers')) {
-			const known = new Set(world.servers.map((s: J) => s.name));
-			const gw = q.get('gw') === 'direct' ? 'direct' : 'reef';
-			config = {
-				servers: q.get('servers')!.split(',').filter((s) => known.has(s)),
-				gateway: gw,
-				task: gw === 'reef' ? q.get('task') || 'everything' : null,
-				lock: gw === 'reef' && q.get('lock') === '1',
-			};
-			prompt = world.prompts.find((x: J) => x.id === q.get('prompt'));
-		} else return;
-		drawSetup();
-		const pick = h(
-			'button',
-			{ type: 'button', class: 'scenario picked', onclick: () => (preset ? runPreset(preset) : ask({ prompt: prompt!.id, text: prompt!.text })) },
-			h('strong', {}, preset ? preset.label : 'From your link'),
-			h('span', {}, prompt ? `Tap to ask: “${prompt.text}”` : setupLabel(config)),
-		);
-		if (prompt || preset) $('[data-scenarios]').prepend(pick);
-		$('[data-scen-label]').hidden = false;
+		const id = q.get('scenario');
+		let s = SCENARIOS.find((x) => x.id === id || (id && x.old.includes(id)));
+		let on = false;
+		if (id) on = /locked|headcount|pal-view|pushy|injected/.test(id) ? true : q.get('protection') === 'on';
+		if (!s && q.get('prompt')) {
+			s = SCENARIOS.find((x) => x.prompt === q.get('prompt'));
+			on = q.get('gw') === 'reef';
+		}
+		if (!s) return;
+		if (s.id === id) on = q.get('protection') === 'on';
+		setProtect(on);
+		const cards = $('[data-scenarios]');
+		cards.replaceChildren(card(s, true), ...SCENARIOS.filter((x) => x !== s).map((x) => card(x)));
 	}
 
 	start();
@@ -551,6 +496,32 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		gap: 0.5rem;
 		align-items: center;
 		min-width: 0;
+	}
+	.chat .switch {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		font: inherit;
+		font-size: 0.82rem;
+		padding: 0.35rem 0.8rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper-2);
+		color: var(--ink-2);
+		cursor: pointer;
+	}
+	.chat .switch b {
+		color: #ff6b6b;
+	}
+	.chat .switch[aria-pressed='true'] {
+		border-color: rgba(79, 240, 180, 0.5);
+		box-shadow: 0 0 18px rgba(79, 240, 180, 0.12);
+	}
+	.chat .switch[aria-pressed='true'] b {
+		color: var(--glow, #2e9a5a);
+	}
+	.chat .switch .dot {
+		margin-right: 0.1rem;
 	}
 	.chat .pill,
 	.chat .ghost {
@@ -752,6 +723,15 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	.chat .msg .bubble.err {
 		background: rgba(214, 69, 65, 0.1);
 		color: #d64541;
+	}
+	.chat .stopped {
+		margin: 0;
+		padding: 0.45rem 0.7rem;
+		border-left: 3px solid var(--glow, #2e9a5a);
+		border-radius: 0 8px 8px 0;
+		background: var(--glow-wash, rgba(46, 154, 90, 0.1));
+		font-size: 0.82rem;
+		color: var(--ink);
 	}
 	.chat .msg-note,
 	.chat .msg-setup,

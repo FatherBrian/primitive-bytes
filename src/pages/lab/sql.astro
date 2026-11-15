@@ -7,7 +7,7 @@ import { url } from '../../url';
 
 <Page
 	title="SQL playground"
-	description="A full DuckDB database running in your browser. Query sample data or your own CSV and Parquet files, chart the results, read query plans, and export Parquet."
+	description="Ask questions of any CSV or Parquet file with SQL, right in your browser. Nothing is uploaded."
 >
 	<section class="sql wrap console" data-sql>
 		<header class="bar">
@@ -18,9 +18,15 @@ import { url } from '../../url';
 			<span class="engine" data-engine><i></i><span data-engine-text>Loading DuckDB…</span></span>
 		</header>
 
+		<p class="lede">
+			Ask questions of a data file with SQL, right in your browser. Drop in a CSV or Parquet file,
+			or start with a month of Dutch train services, read straight from a Parquet file on the web.
+			Nothing you add is uploaded anywhere.
+		</p>
+
 		<div class="layout">
 			<aside class="side">
-				<h2 class="label">// tables</h2>
+				<h2 class="label">// data</h2>
 				<ul class="tables" data-tables>
 					<li class="muted">Starting the engine…</li>
 				</ul>
@@ -29,7 +35,7 @@ import { url } from '../../url';
 					<b>+ Add your own file</b>
 					<span>CSV, Parquet or JSON. It stays in your browser.</span>
 				</label>
-				<h2 class="label">// recipes</h2>
+				<h2 class="label">// try</h2>
 				<div class="recipes" data-recipes></div>
 			</aside>
 
@@ -40,29 +46,20 @@ import { url } from '../../url';
 				</div>
 				<div class="actions">
 					<button type="button" class="run" data-run disabled>Run <kbd>⌘↵</kbd></button>
-					<button type="button" class="ghost" data-share disabled>Copy link</button>
-					<span class="spacer"></span>
-					<button type="button" class="ghost" data-csv disabled>CSV</button>
-					<button type="button" class="ghost" data-parquet disabled>Parquet</button>
 				</div>
 
 				<div class="results">
 					<div class="tabs" role="tablist">
 						<button type="button" role="tab" class="on" data-tab="table">Table</button>
 						<button type="button" role="tab" data-tab="chart">Chart</button>
-						<button type="button" role="tab" data-tab="plan">Plan</button>
 						<span class="stat" data-stat></span>
 					</div>
 					<div class="pane" data-pane="table"><p class="muted pad">Pick a recipe or write a query, then run it.</p></div>
 					<div class="pane" data-pane="chart" hidden></div>
-					<div class="pane" data-pane="plan" hidden></div>
 				</div>
 			</div>
 		</div>
-		<p class="foot">
-			DuckDB-WASM, loaded from jsDelivr. Sample data is generated in your browser from a fixed seed;
-			files you add never leave it.
-		</p>
+		<p class="foot">Runs on DuckDB compiled to WebAssembly, loaded from jsDelivr.</p>
 	</section>
 </Page>
 
@@ -77,14 +74,13 @@ import { url } from '../../url';
 	const hl = $('[data-hl]');
 	const runBtn = $<HTMLButtonElement>('[data-run]');
 	const stat = $('[data-stat]');
-	const panes = { table: $('[data-pane="table"]'), chart: $('[data-pane="chart"]'), plan: $('[data-pane="plan"]') };
+	const panes = { table: $('[data-pane="table"]'), chart: $('[data-pane="chart"]') };
 
 	let duck: any;
 	let db: any;
 	let conn: any;
 	let last: { sql: string; fields: J[]; rows: unknown[][]; total: number } | null = null;
-	let tab: 'table' | 'chart' | 'plan' = 'table';
-	let planFor = '';
+	let tab: 'table' | 'chart' = 'table';
 	let busy = false;
 
 	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | false)[]) {
@@ -101,156 +97,46 @@ import { url } from '../../url';
 
 	// ---- sample data ---------------------------------------------------------------------
 
-	const SEED = `
-SELECT setseed(0.42);
-CREATE TABLE products AS SELECT product_id, product, category, unit_price::DOUBLE AS unit_price FROM (VALUES
-  (1, 'Survey Drone S1', 'Drones', 18500.0),
-  (2, 'Survey Drone S2', 'Drones', 26900.0),
-  (3, 'Deep Rover D4', 'Drones', 61000.0),
-  (4, 'Sonar Pod', 'Sensors', 7400.0),
-  (5, 'Lidar Pod', 'Sensors', 9800.0),
-  (6, 'Battery Pack', 'Parts', 1250.0),
-  (7, 'Fleet Software', 'Software', 4800.0),
-  (8, 'Field Service Plan', 'Services', 3200.0)
-) t(product_id, product, category, unit_price);
-CREATE TABLE orders AS
-WITH base AS (
-  SELECT i AS order_id, random() AS r1, random() AS r2, random() AS r3, random() AS r4,
-         1 + CAST(floor(random() * random() * 14) AS INTEGER) AS units, random() AS r5
-  FROM range(1, 60001) t(i)
-)
-SELECT order_id,
-  DATE '2025-01-01' + CAST(floor(sqrt(r1) * 680) AS INTEGER) AS order_date,
-  ['North America', 'Europe', 'Asia Pacific', 'Latin America'][1 + CAST(floor(r2 * r2 * 4) AS INTEGER)] AS region,
-  ['Direct', 'Partner', 'Online'][1 + CAST(floor(r4 * 3) AS INTEGER)] AS channel,
-  p.product_id, p.product, p.category, units,
-  round(units * p.unit_price * (0.85 + r5 * 0.3), 2)::DOUBLE AS revenue
-FROM base
-JOIN products p ON p.product_id = 1 + CAST(floor(r3 * r3 * 8) AS INTEGER);
-CREATE TABLE telemetry AS
-SELECT 'ENG-' || lpad(CAST(e AS VARCHAR), 3, '0') AS engine_id,
-  TIMESTAMP '2026-01-01 00:00:00' + to_minutes(CAST(m * 10 AS BIGINT)) AS ts,
-  round(640 + e * 1.5 + 18 * sin(m / 36.0) + random() * 9
-        + CASE WHEN e = 7 AND m > 1650 THEN (m - 1650) * 0.22 ELSE 0 END
-        + CASE WHEN random() < 0.002 THEN 60 ELSE 0 END, 1)::DOUBLE AS egt_c,
-  round(0.35 + random() * 0.12 + CASE WHEN e = 13 AND random() < 0.03 THEN 1.8 ELSE 0 END, 3)::DOUBLE AS vibration_ips,
-  round(92 + 4 * sin(m / 50.0) + random() * 2, 2)::DOUBLE AS n1_pct
-FROM range(1, 25) a(e), range(0, 2016) b(m);`;
-
+	// The sample stays where it lives: a view over a public Parquet file, read over HTTPS.
 	const REMOTE = 'https://blobs.duckdb.org/train_services.parquet';
+	const SEED = `CREATE VIEW trains AS SELECT * FROM '${REMOTE}';`;
 
-	const RECIPES: { label: string; sql: string; tab?: 'chart' | 'plan' }[] = [
+	const RECIPES: { label: string; sql: string; tab?: 'chart' }[] = [
 		{
-			label: 'Revenue by region',
+			label: 'What is in this data?',
+			sql: `-- SUMMARIZE profiles every column: type, range, nulls, distinct values
+SUMMARIZE trains;`,
+		},
+		{
+			label: 'Busiest stations',
 			tab: 'chart',
-			sql: `-- Revenue by region, biggest first
-SELECT region, round(sum(revenue)) AS revenue
-FROM orders
-GROUP BY ALL
-ORDER BY revenue DESC;`,
-		},
-		{
-			label: 'Monthly trend',
-			tab: 'chart',
-			sql: `-- Revenue per month, by category
-SELECT date_trunc('month', order_date) AS month,
-       round(sum(revenue) FILTER (WHERE category = 'Drones')) AS drones,
-       round(sum(revenue) FILTER (WHERE category = 'Sensors')) AS sensors,
-       round(sum(revenue) FILTER (WHERE category = 'Software')) AS software
-FROM orders
-GROUP BY ALL
-ORDER BY month;`,
-		},
-		{
-			label: 'Profile a table',
-			sql: `-- SUMMARIZE profiles every column: type, min, max, nulls, distinct count, quantiles
-SUMMARIZE orders;`,
-		},
-		{
-			label: 'Pivot',
-			sql: `-- Revenue by category, one column per sales channel
-PIVOT (SELECT category, channel, round(revenue) AS revenue FROM orders)
-ON channel
-USING sum(revenue)
-GROUP BY category
-ORDER BY category;`,
-		},
-		{
-			label: 'Window functions',
-			sql: `-- Each region's best month, with its share of the region's total
-SELECT region, month, revenue,
-       round(100 * revenue / sum(revenue) OVER (PARTITION BY region), 1) AS pct_of_region
-FROM (
-  SELECT region, date_trunc('month', order_date) AS month, round(sum(revenue)) AS revenue
-  FROM orders GROUP BY ALL
-)
-QUALIFY rank() OVER (PARTITION BY region ORDER BY revenue DESC) = 1
-ORDER BY revenue DESC;`,
-		},
-		{
-			label: 'Find failing engines',
-			sql: `-- Readings far above each engine's own recent average (rolling z-score)
-WITH scored AS (
-  SELECT engine_id, ts, egt_c,
-         (egt_c - avg(egt_c) OVER w) / nullif(stddev_samp(egt_c) OVER w, 0) AS z
-  FROM telemetry
-  WINDOW w AS (PARTITION BY engine_id ORDER BY ts ROWS BETWEEN 144 PRECEDING AND 1 PRECEDING)
-)
-SELECT engine_id,
-       count(*) FILTER (WHERE z > 4) AS spikes,
-       round(max(egt_c), 1) AS peak_egt_c,
-       round(avg(egt_c) FILTER (WHERE ts > TIMESTAMP '2026-01-13'), 1) AS recent_avg_egt_c
-FROM scored
-GROUP BY ALL
-ORDER BY recent_avg_egt_c DESC
-LIMIT 10;`,
-		},
-		{
-			label: 'One engine over time',
-			tab: 'chart',
-			sql: `-- Exhaust gas temperature in 6-hour buckets: a healthy engine vs one drifting hot
-SELECT time_bucket(INTERVAL 6 HOUR, ts) AS bucket,
-       round(avg(egt_c) FILTER (WHERE engine_id = 'ENG-003'), 1) AS eng_003,
-       round(avg(egt_c) FILTER (WHERE engine_id = 'ENG-007'), 1) AS eng_007
-FROM telemetry
-GROUP BY ALL
-ORDER BY bucket;`,
-		},
-		{
-			label: 'Parquet round trip',
-			sql: `-- Write a table to Parquet in browser memory, then read the file's own metadata
-COPY orders TO 'orders.parquet' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 20000);
-
-SELECT path_in_schema AS column, type, compression,
-       sum(total_compressed_size) AS compressed_bytes,
-       sum(total_uncompressed_size) AS raw_bytes,
-       round(sum(total_uncompressed_size) / sum(total_compressed_size), 1) AS ratio
-FROM parquet_metadata('orders.parquet')
-GROUP BY ALL
-ORDER BY ratio DESC;`,
-		},
-		{
-			label: 'Query a remote file',
-			tab: 'chart',
-			sql: `-- Read Parquet straight over HTTPS (a month of Dutch train services, ~380K rows).
--- DuckDB fetches only the byte ranges it needs: the footer, then just these columns.
-SELECT station_name, count(*) AS departures
-FROM '${REMOTE}'
+			sql: `SELECT station_name, count(*) AS departures
+FROM trains
 WHERE departure_time IS NOT NULL
 GROUP BY ALL
 ORDER BY departures DESC
 LIMIT 12;`,
 		},
 		{
-			label: 'Read the plan',
-			tab: 'plan',
-			sql: `-- Open the Plan tab: the operators DuckDB ran, with timings and row counts
-SELECT o.category, count(DISTINCT o.order_id) AS orders, round(sum(o.revenue)) AS revenue
-FROM orders o
-JOIN products p USING (product_id)
-WHERE o.order_date >= DATE '2026-01-01'
+			label: 'Departures by hour',
+			tab: 'chart',
+			sql: `SELECT hour(departure_time) AS hour, count(*) AS departures
+FROM trains
+WHERE departure_time IS NOT NULL
 GROUP BY ALL
-ORDER BY revenue DESC;`,
+ORDER BY hour;`,
+		},
+		{
+			label: 'Types of train',
+			sql: `-- One row per train service, then grouped by type
+SELECT type, count(*) AS services, round(avg(stops), 1) AS avg_stops
+FROM (
+  SELECT service_id, any_value(type) AS type, count(*) AS stops
+  FROM trains
+  GROUP BY service_id
+)
+GROUP BY ALL
+ORDER BY services DESC;`,
 		},
 	];
 
@@ -298,7 +184,6 @@ ORDER BY revenue DESC;`,
 	}
 
 	const stripComments = (s: string) => s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
-	const isQuery = (s: string) => /^(select|with|from|values|pivot|unpivot|summarize|describe|table|show)\b/i.test(stripComments(s));
 
 	// ---- highlighting --------------------------------------------------------------------
 
@@ -449,17 +334,13 @@ ORDER BY revenue DESC;`,
 			await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 			URL.revokeObjectURL(workerUrl);
 			conn = await db.connect();
-			engine('load', 'Generating sample data…');
+			engine('load', 'Opening the sample…');
 			for (const s of statements(SEED)) await conn.query(s);
 			const version = await db.getVersion().catch(() => '');
 			engine('ok', `DuckDB ${version} · WASM`);
 			await drawTables();
 			runBtn.disabled = false;
-			const shared = fromHash();
-			if (shared) {
-				setSql(shared);
-				run();
-			} else pick(RECIPES[0]);
+			pick(RECIPES[0]);
 		} catch (err) {
 			console.error(err);
 			engine('err', 'Couldn’t start DuckDB');
@@ -592,18 +473,11 @@ ORDER BY revenue DESC;`,
 
 	function showError(message: string) {
 		last = null;
-		exportsOn(false);
 		stat.textContent = '';
 		for (const p of Object.values(panes)) p.replaceChildren(h('pre', { class: 'err pad' }, message));
 	}
 
-	function exportsOn(on: boolean) {
-		$<HTMLButtonElement>('[data-csv]').disabled = !on;
-		$<HTMLButtonElement>('[data-parquet]').disabled = !on || !(last && isQuery(last.sql));
-		$<HTMLButtonElement>('[data-share]').disabled = !on;
-	}
-
-	async function run(want?: 'chart' | 'plan') {
+	async function run(want?: 'chart' | 'table') {
 		if (!conn || busy) return;
 		const parts = statements(editor.value);
 		if (!parts.length) return;
@@ -623,14 +497,11 @@ ORDER BY revenue DESC;`,
 			const cols = fields.map((_: J, i: number) => res.getChildAt(i));
 			for (let r = 0; r < shown; r++) rows.push(cols.map((c: any) => c.get(r)));
 			last = { sql: parts[parts.length - 1], fields, rows, total };
-			planFor = '';
 			stat.textContent = `${fmt.format(total)} row${total === 1 ? '' : 's'} · ${fields.length} col${fields.length === 1 ? '' : 's'} · ${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
 			drawTable();
 			drawChart();
-			exportsOn(true);
-			saveHash();
 			if (/^(create|copy|drop|alter|insert)/i.test(stripComments(parts[0])) || userTables.size) drawTables().catch(() => {});
-			show(want ?? (tab === 'plan' ? 'plan' : tab === 'chart' && chartable() ? 'chart' : 'table'));
+			show(want ?? (tab === 'chart' && chartable() ? 'chart' : 'table'));
 		} catch (err) {
 			showError((err as Error).message);
 			show('table');
@@ -837,98 +708,14 @@ ORDER BY revenue DESC;`,
 		return h('div', { class: 'chart-wrap' }, svg as unknown as Node, readout);
 	}
 
-	// ---- plan ----------------------------------------------------------------------------
-
-	async function drawPlan() {
-		if (!last || planFor === last.sql) return;
-		planFor = last.sql;
-		if (!isQuery(last.sql)) {
-			panes.plan.replaceChildren(h('p', { class: 'muted pad' }, 'Plans are for queries. Run a SELECT to see one.'));
-			return;
-		}
-		panes.plan.replaceChildren(h('p', { class: 'muted pad' }, 'Profiling…'));
-		try {
-			const res = await conn.query(`EXPLAIN ANALYZE ${stripComments(last.sql)}`);
-			const col = res.getChildAt(res.schema.fields.length - 1);
-			const out: string[] = [];
-			for (let r = 0; r < res.numRows; r++) out.push(String(col.get(r)));
-			panes.plan.replaceChildren(h('pre', { class: 'plan' }, out.join('\n')));
-		} catch (err) {
-			panes.plan.replaceChildren(h('pre', { class: 'err pad' }, (err as Error).message));
-		}
-	}
-
 	// ---- tabs ----------------------------------------------------------------------------
 
-	function show(which: 'table' | 'chart' | 'plan') {
+	function show(which: 'table' | 'chart') {
 		tab = which;
 		for (const b of root.querySelectorAll<HTMLButtonElement>('[data-tab]')) b.classList.toggle('on', b.dataset.tab === which);
 		for (const [k, p] of Object.entries(panes)) p.hidden = k !== which;
-		if (which === 'plan') drawPlan();
 	}
 	for (const b of root.querySelectorAll<HTMLButtonElement>('[data-tab]')) b.addEventListener('click', () => show(b.dataset.tab as any));
-
-	// ---- export and share ----------------------------------------------------------------
-
-	function download(name: string, blob: Blob) {
-		const a = h('a', { href: URL.createObjectURL(blob), download: name }) as HTMLAnchorElement;
-		document.body.append(a);
-		a.click();
-		setTimeout(() => {
-			URL.revokeObjectURL(a.href);
-			a.remove();
-		}, 1000);
-	}
-
-	$('[data-csv]').addEventListener('click', async () => {
-		if (!last) return;
-		const csvCell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-		if (isQuery(last.sql) && last.total > last.rows.length) {
-			// All rows, straight from DuckDB.
-			await conn.query(`COPY (${stripComments(last.sql)}) TO 'result.csv' (HEADER)`);
-			const buf = await db.copyFileToBuffer('result.csv');
-			return download('result.csv', new Blob([buf], { type: 'text/csv' }));
-		}
-		const lines = [last.fields.map((f: J) => csvCell(f.name)).join(',')];
-		for (const r of last.rows) lines.push(r.map((v, j) => (v === null || v === undefined ? '' : csvCell(text(v, last!.fields[j])))).join(','));
-		download('result.csv', new Blob([lines.join('\n')], { type: 'text/csv' }));
-	});
-
-	$('[data-parquet]').addEventListener('click', async () => {
-		if (!last || !isQuery(last.sql)) return;
-		try {
-			await conn.query(`COPY (${stripComments(last.sql)}) TO 'result.parquet' (FORMAT parquet, COMPRESSION zstd)`);
-			const buf = await db.copyFileToBuffer('result.parquet');
-			download('result.parquet', new Blob([buf], { type: 'application/octet-stream' }));
-		} catch (err) {
-			showError((err as Error).message);
-		}
-	});
-
-	const b64 = {
-		enc: (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
-		dec: (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))),
-	};
-	function saveHash() {
-		if (editor.value.length < 4000) history.replaceState(null, '', `#sql=${b64.enc(editor.value)}`);
-	}
-	function fromHash(): string | null {
-		const m = location.hash.match(/^#sql=([\w-]+)/);
-		if (!m) return null;
-		try {
-			return b64.dec(m[1]);
-		} catch {
-			return null;
-		}
-	}
-	$('[data-share]').addEventListener('click', (e) => {
-		saveHash();
-		const btn = e.currentTarget as HTMLButtonElement;
-		navigator.clipboard?.writeText(location.href).then(() => {
-			btn.textContent = 'Copied';
-			setTimeout(() => (btn.textContent = 'Copy link'), 1500);
-		});
-	});
 
 	syncEditor();
 	boot();
@@ -994,6 +781,13 @@ ORDER BY revenue DESC;`,
 		animation: none;
 	}
 
+	.sql .lede {
+		max-width: 62ch;
+		margin: 1.25rem 0 0;
+		color: var(--ink-2);
+		font-size: 1.02rem;
+		line-height: 1.6;
+	}
 	.sql .layout {
 		display: grid;
 		grid-template-columns: 240px minmax(0, 1fr);
@@ -1215,9 +1009,6 @@ ORDER BY revenue DESC;`,
 		gap: 0.5rem;
 		margin: 0.75rem 0;
 	}
-	.sql .spacer {
-		flex: 1;
-	}
 	.sql .run {
 		display: inline-flex;
 		align-items: center;
@@ -1362,17 +1153,6 @@ ORDER BY revenue DESC;`,
 		white-space: pre-wrap;
 		font-family: var(--font-mono), ui-monospace, monospace;
 		font-size: 0.8rem;
-	}
-	.sql .plan {
-		margin: 0;
-		padding: 1rem;
-		max-height: 34rem;
-		overflow: auto;
-		background: none;
-		border: 0;
-		font-size: 0.72rem;
-		line-height: 1.35;
-		color: var(--ink-2);
 	}
 
 	.sql .chart-wrap {
