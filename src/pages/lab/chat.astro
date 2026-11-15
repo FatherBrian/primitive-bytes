@@ -236,7 +236,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	const composer = $('[data-composer]');
 	const jump = $<HTMLButtonElement>('[data-jump]');
 	let following = true;
-	let programmatic = false;
+	let userAt = 0; // when the reader last scrolled by hand (wheel, touch, keys)
 
 	function bottomTarget() {
 		const threadBottom = thread.getBoundingClientRect().bottom + window.scrollY;
@@ -251,17 +251,21 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		}
 		requestAnimationFrame(() => {
 			const top = bottomTarget();
-			if (Math.abs(window.scrollY - top) < 2) return;
-			programmatic = true;
-			window.scrollTo({ top, behavior: force ? 'smooth' : 'auto' });
-			setTimeout(() => (programmatic = false), force ? 400 : 50);
+			if (Math.abs(window.scrollY - top) > 1) window.scrollTo({ top, behavior: 'auto' });
 		});
 	}
 
+	// Only the reader's own scrolling decides whether we keep following.
+	const byHand = () => (userAt = Date.now());
+	window.addEventListener('wheel', byHand, { passive: true });
+	window.addEventListener('touchmove', byHand, { passive: true });
+	window.addEventListener('keydown', (e) => {
+		if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key) && e.target !== input) byHand();
+	});
 	window.addEventListener(
 		'scroll',
 		() => {
-			if (programmatic || empty.hidden === false) return;
+			if (!empty.hidden || Date.now() - userAt > 600) return;
 			following = window.scrollY >= bottomTarget() - 80;
 			if (following) jump.hidden = true;
 		},
