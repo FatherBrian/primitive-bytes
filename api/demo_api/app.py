@@ -176,7 +176,7 @@ async def run_demo(request: Request) -> JSONResponse | StreamingResponse:
     )
 
 
-# -- the explorer: Kelpworks without a model (free, so only a loose rate limit) --------------
+# -- the explorer: the sample company without a model (free, so only a loose rate limit) --------------
 
 _world: World | None = None
 _world_lock = asyncio.Lock()

@@ -12,24 +12,19 @@ export interface Project {
 export const DEMOS = [
 	{
 		path: '/lab/chat/',
-		title: 'Chat with an agent',
+		title: 'Agent chat',
 		blurb:
-			'Chat with an agent inside Kelpworks. Change what it can reach, put Reef in front of it, and watch every tool call, view and ledger entry.',
-		kind: 'play',
+			'Chat with an agent wired to real MCP servers, some of them hostile. Put a gateway in front, pin its tools, and watch every call, view and ledger entry.',
+		kind: 'chat',
+		section: 'AI',
 	},
 	{
-		path: '/lab/grant-playground/',
-		title: 'Grant playground',
+		path: '/lab/sql/',
+		title: 'SQL playground',
 		blurb:
-			'Pick a person, an agent and a task, and watch three checks decide every tool call. Then tamper with the ledger and see it get caught.',
-		kind: 'grants',
-	},
-	{
-		path: '/lab/reef-lock/',
-		title: 'reef lock, live',
-		blurb:
-			'A server quietly rewrites a tool description to steer your agent. The lockfile notices, shows the diff and hides the tool.',
-		kind: 'lock',
+			'A full DuckDB engine running in your browser. Query sample data or drop in your own CSV or Parquet, chart the results, read the plan, and export Parquet.',
+		kind: 'sql',
+		section: 'Data',
 	},
 ] as const;
 
@@ -44,7 +39,7 @@ export const PROJECTS: Project[] = [
 			{ label: 'GitHub', href: 'https://github.com/FatherBrian/trellis' },
 			{ label: 'PyPI', href: 'https://pypi.org/project/trellisd/' },
 		],
-		demo: { label: 'Grant playground', path: '/lab/grant-playground/' },
+		demo: { label: 'Try task grants', path: '/lab/chat/?scenario=payroll-headcount' },
 	},
 	{
 		name: 'Reef',
@@ -56,11 +51,11 @@ export const PROJECTS: Project[] = [
 			{ label: 'GitHub', href: 'https://github.com/FatherBrian/trellis/tree/main/reef' },
 			{ label: 'PyPI', href: 'https://pypi.org/project/reef-mcp/' },
 		],
-		demo: { label: 'reef lock, live', path: '/lab/reef-lock/' },
+		demo: { label: 'Try the lock', path: '/lab/chat/?scenario=rug-pull-locked' },
 	},
 	{
 		name: 'Primitive Bytes',
-		blurb: 'This site. Astro, a little CSS, and demos that run entirely in your browser.',
+		blurb: 'This site. Astro, a little CSS, an agent chat, and a database that runs in your browser.',
 		status: 'Live',
 		tags: ['Astro', 'TypeScript'],
 		links: [{ label: 'GitHub', href: 'https://github.com/FatherBrian/primitive-bytes' }],

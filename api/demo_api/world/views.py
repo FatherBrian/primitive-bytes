@@ -1,4 +1,4 @@
-"""MCP Apps views for some Kelpworks tools.
+"""MCP Apps views for some the sample company tools.
 
 A tool names its view in ``_meta.ui.resourceUri`` (a ``ui://`` resource of type
 ``text/html;profile=mcp-app``). The host renders the HTML in a sandboxed iframe and talks to

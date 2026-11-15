@@ -40,7 +40,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 			.then((r) => (r.ok ? r.json() : Promise.reject()))
 			.then(({ runs }: { runs: J[] }) => {
 				if (!runs.length) {
-					note.textContent = 'No runs yet. Be the first: try a preset in the playground.';
+					note.textContent = 'No runs yet. Be the first: try a scenario in the agent chat.';
 					return;
 				}
 				note.remove();

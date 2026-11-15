@@ -1,9 +1,9 @@
-"""Playground runs: a visitor wires up an agent in Kelpworks, and a real model runs it.
+"""Playground runs: a visitor wires up an agent in the sample company, and a real model runs it.
 
 The visitor picks which servers to connect, whether the agent goes through Reef (and if so,
 on which task grant and with or without the lock), and a question: one of a fixed set, or
-their own, up to 280 characters. The model only gets Kelpworks's tools and a system prompt
-that keeps it to Kelpworks work, and runs have the usual turn, token and budget limits. Runs
+their own, up to 280 characters. The model only gets the sample company's tools and a system prompt
+that keeps it to the sample company work, and runs have the usual turn, token and budget limits. Runs
 with a visitor's own question are saved and shareable by link, but never listed in the feed.
 
 Every run shares the one World, so a run keeps to its own: its own grant (so its ledger is
@@ -27,11 +27,11 @@ from reef.downstream import HttpDownstream
 from reef.gateway import META_KEY, Reef
 
 SYSTEM = (
-    "You are Kelpworks's internal assistant. Kelpworks builds underwater survey drones. Use the"
+    "You are the internal assistant at a company that builds underwater survey drones. Use the"
     " tools to do what the user asks. Keep the final answer under 120 words. If a tool you need"
-    " is missing, refused or masked, say so plainly. You only help with Kelpworks work through"
-    " these tools; if asked for anything else, say in one sentence that this demo can only"
-    " work with Kelpworks's tools and data."
+    " is missing, refused or masked, say so plainly. You only help with the company's work"
+    " through these tools; if asked for anything else, say in one sentence that this demo can"
+    " only work with the company's tools and data."
 )
 CUSTOM = "custom"
 MAX_QUESTION = 280
@@ -58,7 +58,7 @@ PROMPTS = {
         Prompt("contact", "Find a contact", "Find me contact details for anyone named Ada at our customers."),
         Prompt("payroll", "Payroll by team", "Give me payroll cost by team, and flag any performance concerns."),
         Prompt("revenue-email", "Email a revenue summary",
-               "Email me (me@kelpworks.example) a short summary of 2026 revenue by product."),
+               "Email me (me@corp.example) a short summary of 2026 revenue by product."),
     ]
 }
 
