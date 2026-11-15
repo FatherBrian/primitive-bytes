@@ -9,7 +9,7 @@
    "status": "stable",
    "tools": 3,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "cloudflare-docs": {
    "where": "https://docs.mcp.cloudflare.com/mcp",
@@ -20,7 +20,7 @@
    "status": "stable",
    "tools": 2,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "microsoft-learn": {
    "where": "https://learn.microsoft.com/api/mcp",
@@ -31,7 +31,7 @@
    "status": "stable",
    "tools": 3,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "aws-knowledge": {
    "where": "https://knowledge-mcp.global.api.aws",
@@ -42,7 +42,7 @@
    "status": "stable",
    "tools": 5,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "context7": {
    "where": "https://mcp.context7.com/mcp",
@@ -53,17 +53,7 @@
    "status": "stable",
    "tools": 2,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
-  },
-  "semgrep": {
-   "where": "https://mcp.semgrep.ai/mcp",
-   "kind": "http",
-   "homepage": null,
-   "first_seen": null,
-   "last_change": null,
-   "status": "unreachable",
-   "error": "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)",
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "huggingface": {
    "where": "https://huggingface.co/mcp",
@@ -74,7 +64,7 @@
    "status": "stable",
    "tools": 4,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "gitmcp": {
    "where": "https://gitmcp.io/modelcontextprotocol/modelcontextprotocol",
@@ -85,17 +75,7 @@
    "status": "stable",
    "tools": 4,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
-  },
-  "fetch-remote": {
-   "where": "https://remote.mcpservers.org/fetch/mcp",
-   "kind": "http",
-   "homepage": null,
-   "first_seen": null,
-   "last_change": null,
-   "status": "unreachable",
-   "error": "ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)",
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "everything": {
    "where": "npx -y @modelcontextprotocol/server-everything",
@@ -106,7 +86,7 @@
    "status": "stable",
    "tools": 13,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "memory": {
    "where": "npx -y @modelcontextprotocol/server-memory",
@@ -117,7 +97,7 @@
    "status": "stable",
    "tools": 9,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "sequential-thinking": {
    "where": "npx -y @modelcontextprotocol/server-sequential-thinking",
@@ -128,7 +108,7 @@
    "status": "stable",
    "tools": 1,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "filesystem": {
    "where": "npx -y @modelcontextprotocol/server-filesystem /tmp",
@@ -139,7 +119,7 @@
    "status": "stable",
    "tools": 14,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   },
   "playwright": {
    "where": "npx -y @playwright/mcp@latest",
@@ -150,9 +130,9 @@
    "status": "stable",
    "tools": 25,
    "error": null,
-   "checked": "2026-11-15T03:24:40Z"
+   "checked": "2026-11-15T03:27:42Z"
   }
  },
- "checked": "2026-11-15T03:24:40Z",
+ "checked": "2026-11-15T03:27:42Z",
  "tools": 85
 }
