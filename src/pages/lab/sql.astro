@@ -137,7 +137,7 @@ SELECT 'ENG-' || lpad(CAST(e AS VARCHAR), 3, '0') AS engine_id,
   round(92 + 4 * sin(m / 50.0) + random() * 2, 2)::DOUBLE AS n1_pct
 FROM range(1, 25) a(e), range(0, 2016) b(m);`;
 
-	const REMOTE = 'https://shell.duckdb.org/data/tpch/0_01/parquet/lineitem.parquet';
+	const REMOTE = 'https://blobs.duckdb.org/train_services.parquet';
 
 	const RECIPES: { label: string; sql: string; tab?: 'chart' | 'plan' }[] = [
 		{
@@ -169,9 +169,9 @@ SUMMARIZE orders;`,
 		{
 			label: 'Pivot',
 			sql: `-- Revenue by category, one column per sales channel
-PIVOT orders
+PIVOT (SELECT category, channel, round(revenue) AS revenue FROM orders)
 ON channel
-USING round(sum(revenue))
+USING sum(revenue)
 GROUP BY category
 ORDER BY category;`,
 		},
@@ -231,14 +231,15 @@ ORDER BY ratio DESC;`,
 		},
 		{
 			label: 'Query a remote file',
-			sql: `-- Read Parquet straight over HTTPS: only the columns and row groups needed are fetched
-SELECT l_returnflag, l_linestatus,
-       count(*) AS line_items,
-       round(sum(l_extendedprice)) AS revenue,
-       round(avg(l_discount), 3) AS avg_discount
+			tab: 'chart',
+			sql: `-- Read Parquet straight over HTTPS (a month of Dutch train services, ~380K rows).
+-- DuckDB fetches only the byte ranges it needs: the footer, then just these columns.
+SELECT station_name, count(*) AS departures
 FROM '${REMOTE}'
+WHERE departure_time IS NOT NULL
 GROUP BY ALL
-ORDER BY ALL;`,
+ORDER BY departures DESC
+LIMIT 12;`,
 		},
 		{
 			label: 'Read the plan',
@@ -583,7 +584,7 @@ ORDER BY revenue DESC;`,
 
 	function pick(r: (typeof RECIPES)[number]) {
 		setSql(r.sql);
-		run(r.tab);
+		run(r.tab ?? 'table');
 	}
 	$('[data-recipes]').replaceChildren(...RECIPES.map((r) => h('button', { type: 'button', class: 'recipe', onclick: () => db && pick(r) }, r.label)));
 
@@ -674,10 +675,9 @@ ORDER BY revenue DESC;`,
 			frag.append(tr);
 		});
 		tbody.append(frag);
-		panes.table.replaceChildren(
-			h('div', { class: 'grid' }, h('table', {}, thead, tbody)),
-			total > rows.length ? h('p', { class: 'muted pad' }, `Showing the first ${fmt.format(rows.length)} of ${fmt.format(total)} rows. Export to get them all.`) : null,
-		);
+		const grid = h('div', { class: 'grid' }, h('table', {}, thead, tbody));
+		panes.table.replaceChildren(grid);
+		if (total > rows.length) panes.table.append(h('p', { class: 'muted pad' }, `Showing the first ${fmt.format(rows.length)} of ${fmt.format(total)} rows. Export to get them all.`));
 	}
 
 	// ---- chart ---------------------------------------------------------------------------
