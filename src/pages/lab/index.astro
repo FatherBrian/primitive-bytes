@@ -1,7 +1,5 @@
 ---
-import RecentRuns from '../../components/demo/RecentRuns.astro';
 import Page from '../../layouts/Page.astro';
-import { PROJECTS } from '../../data/lab';
 import { url } from '../../url';
 ---
 
@@ -32,8 +30,8 @@ import { url } from '../../url';
 				<div class="copy">
 					<h2>Agent chat <span aria-hidden="true">→</span></h2>
 					<p>
-						Chat with an agent, change what it can reach, put a gateway in front, pin its tools. Watch
-						every tool call, MCP app view and ledger entry.
+						Watch a real agent fall for three attacks through its MCP servers. Then turn protection on
+						and watch each one fail.
 					</p>
 				</div>
 			</a>
@@ -58,50 +56,13 @@ import { url } from '../../url';
 				<div class="copy">
 					<h2>SQL playground <span aria-hidden="true">→</span></h2>
 					<p>
-						DuckDB in your tab. Query sample data or drop in your own CSV or Parquet, chart results,
-						read query plans, and export Parquet. Nothing leaves your browser.
+						Ask questions of any CSV or Parquet file with SQL, right in your browser. Nothing is
+						uploaded.
 					</p>
 				</div>
 			</a>
 		</section>
 
-		<section class="wrap">
-			<div class="label-row">
-				<h2 class="label">// recent agent runs</h2>
-				<a href={url('/lab/runs/')}>All runs →</a>
-			</div>
-			<RecentRuns limit={4} />
-		</section>
-
-		<section class="wrap">
-			<h2 class="label">// open source</h2>
-			<div class="projects">
-				{
-					PROJECTS.map((p) => (
-						<article class="project">
-							<div class="top">
-								<h3>{p.name}</h3>
-								<span class="status">{p.status}</span>
-							</div>
-							<p>{p.blurb}</p>
-							<div class="tags">
-								{p.tags.map((t) => (
-									<span class="tag">{t}</span>
-								))}
-							</div>
-							<div class="links">
-								{p.demo && <a href={url(p.demo.path)}>{p.demo.label} →</a>}
-								{p.links.map((l) => (
-									<a href={l.href} target="_blank" rel="noopener">
-										{l.label} ↗
-									</a>
-								))}
-							</div>
-						</article>
-					))
-				}
-			</div>
-		</section>
 	</div>
 </Page>
 
@@ -354,82 +315,6 @@ import { url } from '../../url';
 		color: var(--ink-2);
 		font-size: 0.95rem;
 		line-height: 1.55;
-	}
-
-	.label {
-		margin: 3rem 0 1rem;
-		color: var(--ink-3);
-		font-family: var(--font-mono), ui-monospace, monospace;
-		font-size: 0.8rem;
-		font-weight: 500;
-		letter-spacing: 0.04em;
-	}
-	.label-row {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 1rem;
-	}
-	.label-row a {
-		color: var(--glow);
-		font-size: 0.85rem;
-		text-decoration: none;
-	}
-	.projects {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-		gap: 1rem;
-	}
-	.project {
-		padding: 1.1rem 1.2rem;
-		border: 1px solid var(--rule);
-		border-radius: 14px;
-		background: var(--paper-2);
-	}
-	.project .top {
-		display: flex;
-		justify-content: space-between;
-		align-items: baseline;
-		gap: 0.75rem;
-	}
-	.project h3 {
-		margin: 0;
-		font-size: 1.1rem;
-	}
-	.status {
-		font-family: var(--font-mono), ui-monospace, monospace;
-		font-size: 0.7rem;
-		color: var(--glow);
-		white-space: nowrap;
-	}
-	.project p {
-		margin: 0.5rem 0 0.75rem;
-		color: var(--ink-2);
-		font-size: 0.9rem;
-		line-height: 1.55;
-	}
-	.tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.35rem;
-	}
-	.tag {
-		padding: 0.15rem 0.5rem;
-		border: 1px solid var(--rule);
-		border-radius: 999px;
-		font-size: 0.72rem;
-		color: var(--ink-3);
-	}
-	.links {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem 1rem;
-		margin-top: 0.85rem;
-		font-size: 0.85rem;
-	}
-	.links a {
-		color: var(--accent-ink);
-		text-decoration: none;
 	}
 
 	@keyframes blink {
