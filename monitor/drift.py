@@ -70,6 +70,8 @@ async def main() -> int:
         try:
             tools, views = await asyncio.wait_for(snapshot(spec), TIMEOUT)
         except Exception as exc:  # unreachable: keep the old pins, record why
+            while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+                exc = exc.exceptions[0]  # the real error, not the task group around it
             reason = f"{type(exc).__name__}: {exc}".strip()
             print(f"{name}: unreachable ({reason[:200]})", file=sys.stderr)
             status["servers"][name] = {**prev, **entry, "status": "unreachable", "error": reason[:300],
