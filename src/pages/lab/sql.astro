@@ -1,0 +1,1494 @@
+---
+// The SQL playground: DuckDB compiled to WebAssembly, running in the visitor's tab.
+// Nothing is sent anywhere; the engine loads from a CDN and the data is generated locally.
+import Page from '../../layouts/Page.astro';
+import { url } from '../../url';
+---
+
+<Page
+	title="SQL playground"
+	description="A full DuckDB database running in your browser. Query sample data or your own CSV and Parquet files, chart the results, read query plans, and export Parquet."
+>
+	<section class="sql wrap console" data-sql>
+		<header class="bar">
+			<div class="title">
+				<a class="back" href={url('/lab/')}>← Lab</a>
+				<h1><span class="glyph">›_</span> SQL playground</h1>
+			</div>
+			<span class="engine" data-engine><i></i><span data-engine-text>Loading DuckDB…</span></span>
+		</header>
+
+		<div class="layout">
+			<aside class="side">
+				<h2 class="label">// tables</h2>
+				<ul class="tables" data-tables>
+					<li class="muted">Starting the engine…</li>
+				</ul>
+				<label class="drop" data-drop>
+					<input type="file" accept=".csv,.tsv,.parquet,.json,.ndjson,.jsonl" multiple data-file hidden />
+					<b>+ Add your own file</b>
+					<span>CSV, Parquet or JSON. It stays in your browser.</span>
+				</label>
+				<h2 class="label">// recipes</h2>
+				<div class="recipes" data-recipes></div>
+			</aside>
+
+			<div class="main">
+				<div class="editor">
+					<pre class="hl" aria-hidden="true" data-hl></pre>
+					<textarea data-editor spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="SQL"></textarea>
+				</div>
+				<div class="actions">
+					<button type="button" class="run" data-run disabled>Run <kbd>⌘↵</kbd></button>
+					<button type="button" class="ghost" data-share disabled>Copy link</button>
+					<span class="spacer"></span>
+					<button type="button" class="ghost" data-csv disabled>CSV</button>
+					<button type="button" class="ghost" data-parquet disabled>Parquet</button>
+				</div>
+
+				<div class="results">
+					<div class="tabs" role="tablist">
+						<button type="button" role="tab" class="on" data-tab="table">Table</button>
+						<button type="button" role="tab" data-tab="chart">Chart</button>
+						<button type="button" role="tab" data-tab="plan">Plan</button>
+						<span class="stat" data-stat></span>
+					</div>
+					<div class="pane" data-pane="table"><p class="muted pad">Pick a recipe or write a query, then run it.</p></div>
+					<div class="pane" data-pane="chart" hidden></div>
+					<div class="pane" data-pane="plan" hidden></div>
+				</div>
+			</div>
+		</div>
+		<p class="foot">
+			DuckDB-WASM, loaded from jsDelivr. Sample data is generated in your browser from a fixed seed;
+			files you add never leave it.
+		</p>
+	</section>
+</Page>
+
+<script>
+	type J = Record<string, any>;
+	const VERSION = '1.29.0';
+	const CDN = `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${VERSION}/+esm`;
+
+	const root = document.querySelector<HTMLElement>('[data-sql]')!;
+	const $ = <T extends HTMLElement = HTMLElement>(s: string) => root.querySelector<T>(s)!;
+	const editor = $<HTMLTextAreaElement>('[data-editor]');
+	const hl = $('[data-hl]');
+	const runBtn = $<HTMLButtonElement>('[data-run]');
+	const stat = $('[data-stat]');
+	const panes = { table: $('[data-pane="table"]'), chart: $('[data-pane="chart"]'), plan: $('[data-pane="plan"]') };
+
+	let duck: any;
+	let db: any;
+	let conn: any;
+	let last: { sql: string; fields: J[]; rows: unknown[][]; total: number } | null = null;
+	let tab: 'table' | 'chart' | 'plan' = 'table';
+	let planFor = '';
+	let busy = false;
+
+	function h(tag: string, attrs: J = {}, ...kids: (Node | string | null | false)[]) {
+		const el = document.createElement(tag);
+		for (const [k, v] of Object.entries(attrs)) {
+			if (v === undefined || v === null || v === false) continue;
+			if (k === 'class') el.className = v;
+			else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+			else el.setAttribute(k, v === true ? '' : String(v));
+		}
+		for (const kid of kids) if (kid !== null && kid !== false) el.append(kid);
+		return el;
+	}
+
+	// ---- sample data ---------------------------------------------------------------------
+
+	const SEED = `
+SELECT setseed(0.42);
+CREATE TABLE products AS SELECT product_id, product, category, unit_price::DOUBLE AS unit_price FROM (VALUES
+  (1, 'Survey Drone S1', 'Drones', 18500.0),
+  (2, 'Survey Drone S2', 'Drones', 26900.0),
+  (3, 'Deep Rover D4', 'Drones', 61000.0),
+  (4, 'Sonar Pod', 'Sensors', 7400.0),
+  (5, 'Lidar Pod', 'Sensors', 9800.0),
+  (6, 'Battery Pack', 'Parts', 1250.0),
+  (7, 'Fleet Software', 'Software', 4800.0),
+  (8, 'Field Service Plan', 'Services', 3200.0)
+) t(product_id, product, category, unit_price);
+CREATE TABLE orders AS
+WITH base AS (
+  SELECT i AS order_id, random() AS r1, random() AS r2, random() AS r3, random() AS r4,
+         1 + CAST(floor(random() * random() * 14) AS INTEGER) AS units, random() AS r5
+  FROM range(1, 60001) t(i)
+)
+SELECT order_id,
+  DATE '2025-01-01' + CAST(floor(sqrt(r1) * 680) AS INTEGER) AS order_date,
+  ['North America', 'Europe', 'Asia Pacific', 'Latin America'][1 + CAST(floor(r2 * r2 * 4) AS INTEGER)] AS region,
+  ['Direct', 'Partner', 'Online'][1 + CAST(floor(r4 * 3) AS INTEGER)] AS channel,
+  p.product_id, p.product, p.category, units,
+  round(units * p.unit_price * (0.85 + r5 * 0.3), 2)::DOUBLE AS revenue
+FROM base
+JOIN products p ON p.product_id = 1 + CAST(floor(r3 * r3 * 8) AS INTEGER);
+CREATE TABLE telemetry AS
+SELECT 'ENG-' || lpad(CAST(e AS VARCHAR), 3, '0') AS engine_id,
+  TIMESTAMP '2026-01-01 00:00:00' + to_minutes(CAST(m * 10 AS BIGINT)) AS ts,
+  round(640 + e * 1.5 + 18 * sin(m / 36.0) + random() * 9
+        + CASE WHEN e = 7 AND m > 1650 THEN (m - 1650) * 0.22 ELSE 0 END
+        + CASE WHEN random() < 0.002 THEN 60 ELSE 0 END, 1)::DOUBLE AS egt_c,
+  round(0.35 + random() * 0.12 + CASE WHEN e = 13 AND random() < 0.03 THEN 1.8 ELSE 0 END, 3)::DOUBLE AS vibration_ips,
+  round(92 + 4 * sin(m / 50.0) + random() * 2, 2)::DOUBLE AS n1_pct
+FROM range(1, 25) a(e), range(0, 2016) b(m);`;
+
+	const REMOTE = 'https://shell.duckdb.org/data/tpch/0_01/parquet/lineitem.parquet';
+
+	const RECIPES: { label: string; sql: string; tab?: 'chart' | 'plan' }[] = [
+		{
+			label: 'Revenue by region',
+			tab: 'chart',
+			sql: `-- Revenue by region, biggest first
+SELECT region, round(sum(revenue)) AS revenue
+FROM orders
+GROUP BY ALL
+ORDER BY revenue DESC;`,
+		},
+		{
+			label: 'Monthly trend',
+			tab: 'chart',
+			sql: `-- Revenue per month, by category
+SELECT date_trunc('month', order_date) AS month,
+       round(sum(revenue) FILTER (WHERE category = 'Drones')) AS drones,
+       round(sum(revenue) FILTER (WHERE category = 'Sensors')) AS sensors,
+       round(sum(revenue) FILTER (WHERE category = 'Software')) AS software
+FROM orders
+GROUP BY ALL
+ORDER BY month;`,
+		},
+		{
+			label: 'Profile a table',
+			sql: `-- SUMMARIZE profiles every column: type, min, max, nulls, distinct count, quantiles
+SUMMARIZE orders;`,
+		},
+		{
+			label: 'Pivot',
+			sql: `-- Revenue by category, one column per sales channel
+PIVOT orders
+ON channel
+USING round(sum(revenue))
+GROUP BY category
+ORDER BY category;`,
+		},
+		{
+			label: 'Window functions',
+			sql: `-- Each region's best month, with its share of the region's total
+SELECT region, month, revenue,
+       round(100 * revenue / sum(revenue) OVER (PARTITION BY region), 1) AS pct_of_region
+FROM (
+  SELECT region, date_trunc('month', order_date) AS month, round(sum(revenue)) AS revenue
+  FROM orders GROUP BY ALL
+)
+QUALIFY rank() OVER (PARTITION BY region ORDER BY revenue DESC) = 1
+ORDER BY revenue DESC;`,
+		},
+		{
+			label: 'Find failing engines',
+			sql: `-- Readings far above each engine's own recent average (rolling z-score)
+WITH scored AS (
+  SELECT engine_id, ts, egt_c,
+         (egt_c - avg(egt_c) OVER w) / nullif(stddev_samp(egt_c) OVER w, 0) AS z
+  FROM telemetry
+  WINDOW w AS (PARTITION BY engine_id ORDER BY ts ROWS BETWEEN 144 PRECEDING AND 1 PRECEDING)
+)
+SELECT engine_id,
+       count(*) FILTER (WHERE z > 4) AS spikes,
+       round(max(egt_c), 1) AS peak_egt_c,
+       round(avg(egt_c) FILTER (WHERE ts > TIMESTAMP '2026-01-13'), 1) AS recent_avg_egt_c
+FROM scored
+GROUP BY ALL
+ORDER BY recent_avg_egt_c DESC
+LIMIT 10;`,
+		},
+		{
+			label: 'One engine over time',
+			tab: 'chart',
+			sql: `-- Exhaust gas temperature in 6-hour buckets: a healthy engine vs one drifting hot
+SELECT time_bucket(INTERVAL 6 HOUR, ts) AS bucket,
+       round(avg(egt_c) FILTER (WHERE engine_id = 'ENG-003'), 1) AS eng_003,
+       round(avg(egt_c) FILTER (WHERE engine_id = 'ENG-007'), 1) AS eng_007
+FROM telemetry
+GROUP BY ALL
+ORDER BY bucket;`,
+		},
+		{
+			label: 'Parquet round trip',
+			sql: `-- Write a table to Parquet in browser memory, then read the file's own metadata
+COPY orders TO 'orders.parquet' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 20000);
+
+SELECT path_in_schema AS column, type, compression,
+       sum(total_compressed_size) AS compressed_bytes,
+       sum(total_uncompressed_size) AS raw_bytes,
+       round(sum(total_uncompressed_size) / sum(total_compressed_size), 1) AS ratio
+FROM parquet_metadata('orders.parquet')
+GROUP BY ALL
+ORDER BY ratio DESC;`,
+		},
+		{
+			label: 'Query a remote file',
+			sql: `-- Read Parquet straight over HTTPS: only the columns and row groups needed are fetched
+SELECT l_returnflag, l_linestatus,
+       count(*) AS line_items,
+       round(sum(l_extendedprice)) AS revenue,
+       round(avg(l_discount), 3) AS avg_discount
+FROM '${REMOTE}'
+GROUP BY ALL
+ORDER BY ALL;`,
+		},
+		{
+			label: 'Read the plan',
+			tab: 'plan',
+			sql: `-- Open the Plan tab: the operators DuckDB ran, with timings and row counts
+SELECT o.category, count(DISTINCT o.order_id) AS orders, round(sum(o.revenue)) AS revenue
+FROM orders o
+JOIN products p USING (product_id)
+WHERE o.order_date >= DATE '2026-01-01'
+GROUP BY ALL
+ORDER BY revenue DESC;`,
+		},
+	];
+
+	// ---- SQL helpers ---------------------------------------------------------------------
+
+	/** Split a script into statements, respecting quotes and comments. */
+	function statements(sql: string): string[] {
+		const out: string[] = [];
+		let cur = '';
+		let i = 0;
+		while (i < sql.length) {
+			const c = sql[i];
+			const two = sql.slice(i, i + 2);
+			if (two === '--') {
+				const end = sql.indexOf('\n', i);
+				const stop = end < 0 ? sql.length : end;
+				cur += sql.slice(i, stop);
+				i = stop;
+			} else if (two === '/*') {
+				const end = sql.indexOf('*/', i + 2);
+				const stop = end < 0 ? sql.length : end + 2;
+				cur += sql.slice(i, stop);
+				i = stop;
+			} else if (c === "'" || c === '"') {
+				let j = i + 1;
+				while (j < sql.length) {
+					if (sql[j] === c && sql[j + 1] === c) j += 2;
+					else if (sql[j] === c) break;
+					else j++;
+				}
+				cur += sql.slice(i, j + 1);
+				i = j + 1;
+			} else if (c === ';') {
+				out.push(cur);
+				cur = '';
+				i++;
+			} else {
+				cur += c;
+				i++;
+			}
+		}
+		out.push(cur);
+		// Drop statements that are only whitespace and comments.
+		return out.filter((s) => s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim());
+	}
+
+	const stripComments = (s: string) => s.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '').trim();
+	const isQuery = (s: string) => /^(select|with|from|values|pivot|unpivot|summarize|describe|table|show)\b/i.test(stripComments(s));
+
+	// ---- highlighting --------------------------------------------------------------------
+
+	const KW = new Set(
+		`select from where group by order having limit offset with as and or not in is null like ilike between case when then else end join left right full inner outer cross on using union all distinct except intersect create replace table view insert into values update set delete drop copy to format pivot unpivot qualify window over partition rows range preceding following current row filter asc desc nulls first last summarize describe explain analyze interval true false cast exists any some recursive lateral asof positional semi anti natural`.split(' '),
+	);
+	const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+
+	function highlight(src: string): string {
+		const re = /(--[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:[^']|'')*'?)|("(?:[^"]|"")*"?)|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)(\s*\()?|([\s\S])/g;
+		let out = '';
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(src))) {
+			if (m[1]) out += `<span class="c">${esc(m[1])}</span>`;
+			else if (m[2]) out += `<span class="s">${esc(m[2])}</span>`;
+			else if (m[3]) out += `<span class="q">${esc(m[3])}</span>`;
+			else if (m[4]) out += `<span class="n">${m[4]}</span>`;
+			else if (m[5]) {
+				const w = m[5];
+				if (KW.has(w.toLowerCase())) out += `<span class="k">${w}</span>`;
+				else if (m[6]) out += `<span class="f">${w}</span>`;
+				else out += esc(w);
+				if (m[6]) out += esc(m[6]);
+			} else out += esc(m[7]);
+		}
+		return out + '\n';
+	}
+
+	function syncEditor() {
+		hl.innerHTML = highlight(editor.value);
+		hl.scrollTop = editor.scrollTop;
+		hl.scrollLeft = editor.scrollLeft;
+	}
+	editor.addEventListener('input', syncEditor);
+	editor.addEventListener('scroll', () => {
+		hl.scrollTop = editor.scrollTop;
+		hl.scrollLeft = editor.scrollLeft;
+	});
+	editor.addEventListener('keydown', (e) => {
+		if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+			e.preventDefault();
+			run();
+		} else if (e.key === 'Tab' && !e.shiftKey) {
+			e.preventDefault();
+			const { selectionStart: a, selectionEnd: b, value } = editor;
+			editor.value = value.slice(0, a) + '  ' + value.slice(b);
+			editor.selectionStart = editor.selectionEnd = a + 2;
+			syncEditor();
+		}
+	});
+	function setSql(sql: string) {
+		editor.value = sql;
+		syncEditor();
+	}
+
+	// ---- values --------------------------------------------------------------------------
+
+	type Kind = 'num' | 'time' | 'date' | 'text';
+	function kindOf(f: J): Kind {
+		const t = String(f.type);
+		if (/^Date/.test(t)) return 'date';
+		if (/^Timestamp/.test(t)) return 'time';
+		if (/Int|Float|Decimal|Double/.test(t)) return 'num';
+		return 'text';
+	}
+	function shortType(f: J): string {
+		const t = String(f.type);
+		if (/^Utf8|LargeUtf8/.test(t)) return 'text';
+		if (/^Int|^Uint/.test(t)) return t.toLowerCase().replace('uint', 'uint');
+		if (/^Float64|Double/.test(t)) return 'double';
+		if (/^Float/.test(t)) return 'float';
+		if (/^Decimal/.test(t)) return 'decimal';
+		if (/^Date/.test(t)) return 'date';
+		if (/^Timestamp/.test(t)) return 'timestamp';
+		if (/^Bool/.test(t)) return 'bool';
+		if (/^List/.test(t)) return 'list';
+		if (/^Struct/.test(t)) return 'struct';
+		return t.split('<')[0].toLowerCase();
+	}
+
+	function decimal(v: any, scale: number): string {
+		let raw = String(v);
+		if (!/^-?\d+$/.test(raw) && v && typeof v.length === 'number') {
+			// Four little-endian 32-bit words, two's complement.
+			let n = 0n;
+			for (let i = v.length - 1; i >= 0; i--) n = (n << 32n) | BigInt(v[i] >>> 0);
+			const bits = BigInt(v.length * 32);
+			if (n >> (bits - 1n)) n -= 1n << bits;
+			raw = n.toString();
+		}
+		if (!scale) return raw;
+		const neg = raw.startsWith('-');
+		const d = (neg ? raw.slice(1) : raw).padStart(scale + 1, '0');
+		return `${neg ? '-' : ''}${d.slice(0, -scale)}.${d.slice(-scale)}`;
+	}
+
+	function toMs(v: any, f: J): number {
+		if (v instanceof Date) return v.getTime();
+		if (typeof v === 'bigint') {
+			const unit = String(f.type);
+			if (/NANO/i.test(unit)) return Number(v / 1000000n);
+			if (/MICRO/i.test(unit)) return Number(v / 1000n);
+			if (/MILLI/i.test(unit)) return Number(v);
+			return Number(v) * 1000;
+		}
+		return Number(v);
+	}
+
+	function text(v: any, f: J): string {
+		if (v === null || v === undefined) return 'NULL';
+		const k = kindOf(f);
+		if (k === 'date') return new Date(toMs(v, f)).toISOString().slice(0, 10);
+		if (k === 'time') return new Date(toMs(v, f)).toISOString().replace('T', ' ').replace(/\.000Z$|Z$/, '');
+		if (/^Decimal/.test(String(f.type))) return decimal(v, f.type.scale ?? 0);
+		if (typeof v === 'bigint') return v.toString();
+		if (typeof v === 'number') return Number.isInteger(v) ? String(v) : String(Math.round(v * 1e6) / 1e6);
+		if (typeof v === 'string' || typeof v === 'boolean') return String(v);
+		const plain = typeof v.toJSON === 'function' ? v.toJSON() : typeof v.toArray === 'function' ? Array.from(v.toArray()) : v;
+		return JSON.stringify(plain, (_k, x) => (typeof x === 'bigint' ? x.toString() : x));
+	}
+
+	function num(v: any, f: J): number | null {
+		if (v === null || v === undefined) return null;
+		const k = kindOf(f);
+		if (k === 'date' || k === 'time') return toMs(v, f);
+		if (/^Decimal/.test(String(f.type))) return parseFloat(decimal(v, f.type.scale ?? 0));
+		const n = typeof v === 'bigint' ? Number(v) : Number(v);
+		return Number.isFinite(n) ? n : null;
+	}
+
+	const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+	const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+
+	// ---- engine --------------------------------------------------------------------------
+
+	function engine(state: 'load' | 'ok' | 'err', text: string) {
+		$('[data-engine]').className = `engine ${state}`;
+		$('[data-engine-text]').textContent = text;
+	}
+
+	async function boot() {
+		try {
+			duck = await import(/* @vite-ignore */ CDN);
+			const bundle = await duck.selectBundle(duck.getJsDelivrBundles());
+			const workerUrl = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' }));
+			const worker = new Worker(workerUrl);
+			db = new duck.AsyncDuckDB(new duck.VoidLogger(), worker);
+			await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+			URL.revokeObjectURL(workerUrl);
+			conn = await db.connect();
+			engine('load', 'Generating sample data…');
+			for (const s of statements(SEED)) await conn.query(s);
+			const version = await db.getVersion().catch(() => '');
+			engine('ok', `DuckDB ${version} · WASM`);
+			await drawTables();
+			runBtn.disabled = false;
+			const shared = fromHash();
+			if (shared) {
+				setSql(shared);
+				run();
+			} else pick(RECIPES[0]);
+		} catch (err) {
+			console.error(err);
+			engine('err', 'Couldn’t start DuckDB');
+			panes.table.replaceChildren(
+				h('p', { class: 'err pad' }, 'DuckDB couldn’t load in this browser. It needs WebAssembly and a connection to cdn.jsdelivr.net.'),
+			);
+		}
+	}
+
+	// ---- tables panel --------------------------------------------------------------------
+
+	const userTables = new Set<string>();
+
+	async function drawTables() {
+		const res = await conn.query(
+			`SELECT table_name, table_type, estimated_size FROM (
+			   SELECT table_name, 'table' AS table_type, estimated_size FROM duckdb_tables()
+			   UNION ALL SELECT view_name, 'view', NULL FROM duckdb_views() WHERE NOT internal
+			 ) ORDER BY table_type, table_name`,
+		);
+		const list = $('[data-tables]');
+		list.replaceChildren();
+		for (let r = 0; r < res.numRows; r++) {
+			const name = String(res.getChildAt(0).get(r));
+			const size = res.getChildAt(2).get(r);
+			const cols = h('ul', { class: 'cols', hidden: true });
+			const li = h(
+				'li',
+				{},
+				h(
+					'button',
+					{
+						type: 'button',
+						class: 'tname',
+						onclick: async () => {
+							if (cols.hidden && !cols.childElementCount) await drawColumns(name, cols);
+							cols.hidden = !cols.hidden;
+						},
+					},
+					h('span', { class: 'ico' }, userTables.has(name) ? '◆' : '▦'),
+					name,
+					size !== null && size !== undefined ? h('em', {}, compact.format(Number(size))) : null,
+				),
+				h('button', { type: 'button', class: 'peek', title: `Query ${name}`, onclick: () => { setSql(`SELECT *\nFROM ${q(name)}\nLIMIT 100;`); run(); } }, '▶'),
+				cols,
+			);
+			list.append(li);
+		}
+	}
+
+	const q = (name: string) => (/^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replace(/"/g, '""')}"`);
+
+	async function drawColumns(name: string, into: HTMLElement) {
+		const res = await conn.query(`DESCRIBE ${q(name)}`);
+		const n = res.getChildAt(0);
+		const t = res.getChildAt(1);
+		for (let r = 0; r < res.numRows; r++) {
+			into.append(
+				h(
+					'li',
+					{},
+					h('button', { type: 'button', onclick: () => insert(q(String(n.get(r)))) }, String(n.get(r))),
+					h('em', {}, String(t.get(r)).toLowerCase()),
+				),
+			);
+		}
+	}
+
+	function insert(textToAdd: string) {
+		const { selectionStart: a, selectionEnd: b, value } = editor;
+		editor.value = value.slice(0, a) + textToAdd + value.slice(b);
+		editor.selectionStart = editor.selectionEnd = a + textToAdd.length;
+		editor.focus();
+		syncEditor();
+	}
+
+	// ---- files ---------------------------------------------------------------------------
+
+	async function addFiles(files: FileList | File[]) {
+		for (const file of Array.from(files)) {
+			const lower = file.name.toLowerCase();
+			const reader = lower.endsWith('.parquet')
+				? 'read_parquet'
+				: /\.(json|ndjson|jsonl)$/.test(lower)
+					? 'read_json_auto'
+					: 'read_csv_auto';
+			let name = lower.replace(/\.[^.]+$/, '').replace(/[^a-z0-9_]+/g, '_').replace(/^(\d)/, '_$1') || 'file';
+			while (userTables.has(name)) name += '_2';
+			try {
+				await db.registerFileHandle(file.name, file, duck.DuckDBDataProtocol.BROWSER_FILEREADER, true);
+				await conn.query(`CREATE OR REPLACE VIEW ${q(name)} AS SELECT * FROM ${reader}('${file.name.replace(/'/g, "''")}')`);
+				userTables.add(name);
+				await drawTables();
+				setSql(`-- Your file, profiled column by column\nSUMMARIZE ${q(name)};`);
+				await run();
+			} catch (err) {
+				showError(`Couldn't read ${file.name}: ${(err as Error).message}`);
+			}
+		}
+	}
+
+	const drop = $('[data-drop]');
+	$<HTMLInputElement>('[data-file]').addEventListener('change', (e) => {
+		const files = (e.target as HTMLInputElement).files;
+		if (files && db) addFiles(files);
+	});
+	for (const target of [drop, root]) {
+		target.addEventListener('dragover', (e) => {
+			e.preventDefault();
+			drop.classList.add('over');
+		});
+		target.addEventListener('dragleave', () => drop.classList.remove('over'));
+		target.addEventListener('drop', (e) => {
+			e.preventDefault();
+			drop.classList.remove('over');
+			const files = (e as DragEvent).dataTransfer?.files;
+			if (files?.length && db) addFiles(files);
+		});
+	}
+
+	// ---- recipes -------------------------------------------------------------------------
+
+	function pick(r: (typeof RECIPES)[number]) {
+		setSql(r.sql);
+		run(r.tab);
+	}
+	$('[data-recipes]').replaceChildren(...RECIPES.map((r) => h('button', { type: 'button', class: 'recipe', onclick: () => db && pick(r) }, r.label)));
+
+	// ---- running -------------------------------------------------------------------------
+
+	function showError(message: string) {
+		last = null;
+		exportsOn(false);
+		stat.textContent = '';
+		for (const p of Object.values(panes)) p.replaceChildren(h('pre', { class: 'err pad' }, message));
+	}
+
+	function exportsOn(on: boolean) {
+		$<HTMLButtonElement>('[data-csv]').disabled = !on;
+		$<HTMLButtonElement>('[data-parquet]').disabled = !on || !(last && isQuery(last.sql));
+		$<HTMLButtonElement>('[data-share]').disabled = !on;
+	}
+
+	async function run(want?: 'chart' | 'plan') {
+		if (!conn || busy) return;
+		const parts = statements(editor.value);
+		if (!parts.length) return;
+		busy = true;
+		runBtn.disabled = true;
+		runBtn.classList.add('going');
+		stat.textContent = 'Running…';
+		const t0 = performance.now();
+		try {
+			let res: any;
+			for (const s of parts) res = await conn.query(s);
+			const ms = performance.now() - t0;
+			const fields = res.schema.fields;
+			const total = res.numRows;
+			const shown = Math.min(total, 1000);
+			const rows: unknown[][] = [];
+			const cols = fields.map((_: J, i: number) => res.getChildAt(i));
+			for (let r = 0; r < shown; r++) rows.push(cols.map((c: any) => c.get(r)));
+			last = { sql: parts[parts.length - 1], fields, rows, total };
+			planFor = '';
+			stat.textContent = `${fmt.format(total)} row${total === 1 ? '' : 's'} · ${fields.length} col${fields.length === 1 ? '' : 's'} · ${ms < 10 ? ms.toFixed(1) : Math.round(ms)} ms`;
+			drawTable();
+			drawChart();
+			exportsOn(true);
+			saveHash();
+			if (/^(create|copy|drop|alter|insert)/i.test(stripComments(parts[0])) || userTables.size) drawTables().catch(() => {});
+			show(want ?? (tab === 'plan' ? 'plan' : tab === 'chart' && chartable() ? 'chart' : 'table'));
+		} catch (err) {
+			showError((err as Error).message);
+			show('table');
+		} finally {
+			busy = false;
+			runBtn.disabled = false;
+			runBtn.classList.remove('going');
+		}
+	}
+	runBtn.addEventListener('click', () => run());
+
+	// ---- table ---------------------------------------------------------------------------
+
+	function drawTable() {
+		if (!last) return;
+		const { fields, rows, total } = last;
+		if (!fields.length) {
+			panes.table.replaceChildren(h('p', { class: 'muted pad' }, 'Done. That statement returned no rows.'));
+			return;
+		}
+		const thead = h(
+			'thead',
+			{},
+			h('tr', {}, h('th', { class: 'rn' }, '#'), ...fields.map((f: J) => h('th', { class: kindOf(f) === 'num' ? 'num' : '' }, h('span', {}, f.name), h('em', {}, shortType(f))))),
+		);
+		const tbody = h('tbody');
+		const frag = document.createDocumentFragment();
+		rows.forEach((row, i) => {
+			const tr = document.createElement('tr');
+			const rn = document.createElement('td');
+			rn.className = 'rn';
+			rn.textContent = String(i + 1);
+			tr.append(rn);
+			row.forEach((v, j) => {
+				const td = document.createElement('td');
+				const f = fields[j];
+				td.textContent = text(v, f);
+				if (v === null || v === undefined) td.className = 'null';
+				else if (kindOf(f) === 'num') td.className = 'num';
+				tr.append(td);
+			});
+			frag.append(tr);
+		});
+		tbody.append(frag);
+		panes.table.replaceChildren(
+			h('div', { class: 'grid' }, h('table', {}, thead, tbody)),
+			total > rows.length ? h('p', { class: 'muted pad' }, `Showing the first ${fmt.format(rows.length)} of ${fmt.format(total)} rows. Export to get them all.`) : null,
+		);
+	}
+
+	// ---- chart ---------------------------------------------------------------------------
+
+	const COLORS = ['#4ff0b4', '#ff7a45', '#5cc8ff', '#c792ea', '#f7c873', '#ff6b9a'];
+
+	function chartable() {
+		if (!last || last.rows.length < 2) return false;
+		return last.fields.some((f: J) => kindOf(f) === 'num');
+	}
+
+	function drawChart() {
+		const box = panes.chart;
+		if (!last || !chartable()) {
+			box.replaceChildren(h('p', { class: 'muted pad' }, 'Charts need at least two rows and a number column.'));
+			return;
+		}
+		const { fields, rows } = last;
+		const xi = Math.max(0, fields.findIndex((f: J) => kindOf(f) !== 'num'));
+		const xf = fields[xi];
+		const ys = fields.map((f: J, i: number) => ({ f, i })).filter(({ f, i }: J) => i !== xi && kindOf(f) === 'num').slice(0, 5);
+		if (!ys.length) {
+			box.replaceChildren(h('p', { class: 'muted pad' }, 'Charts need a number column besides the first.'));
+			return;
+		}
+		const timeX = kindOf(xf) === 'date' || kindOf(xf) === 'time';
+		const line = timeX || (kindOf(xf) === 'num' && rows.length > 12);
+		const legend = h('div', { class: 'legend' }, ...ys.map((y: J, k: number) => h('span', {}, h('i', { style: `background:${COLORS[k % COLORS.length]}` }), y.f.name)));
+		box.replaceChildren(legend, line ? lineChart(xf, xi, ys) : barChart(xf, xi, ys));
+	}
+
+	function svgEl(tag: string, attrs: J = {}, text?: string) {
+		const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+		for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
+		if (text !== undefined) el.textContent = text;
+		return el;
+	}
+
+	function ticks(min: number, max: number, n = 4) {
+		if (min === max) return [min];
+		const step0 = (max - min) / n;
+		const mag = 10 ** Math.floor(Math.log10(step0));
+		const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= step0)!;
+		const out = [];
+		for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) out.push(v);
+		return out;
+	}
+
+	function barChart(xf: J, xi: number, ys: J[]) {
+		const rows = last!.rows.slice(0, 40);
+		const y = ys[0];
+		const vals = rows.map((r) => num(r[y.i], y.f) ?? 0);
+		const labels = rows.map((r) => text(r[xi], xf));
+		const max = Math.max(0, ...vals);
+		const min = Math.min(0, ...vals);
+		const rowH = 26;
+		const W = 640;
+		const L = Math.min(200, Math.max(60, Math.max(...labels.map((l) => l.length)) * 7 + 10));
+		const H = rows.length * rowH + 24;
+		const sx = (v: number) => L + ((v - min) / (max - min || 1)) * (W - L - 70);
+		const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img' });
+		for (const t of ticks(min, max)) {
+			svg.append(svgEl('line', { x1: sx(t), x2: sx(t), y1: 0, y2: H - 20, class: 'gridline' }));
+			svg.append(svgEl('text', { x: sx(t), y: H - 6, class: 'tick', 'text-anchor': 'middle' }, compact.format(t)));
+		}
+		rows.forEach((_r, i) => {
+			const v = vals[i];
+			const y0 = i * rowH + 4;
+			const x0 = sx(Math.min(0, v));
+			const w = Math.max(1, Math.abs(sx(v) - sx(0)));
+			const label = labels[i].length > 28 ? labels[i].slice(0, 27) + '…' : labels[i];
+			svg.append(svgEl('text', { x: L - 8, y: y0 + rowH / 2 + 1, class: 'lbl', 'text-anchor': 'end' }, label));
+			const bar = svgEl('rect', { x: x0, y: y0 + 3, width: w, height: rowH - 8, rx: 3, class: 'hbar', style: `animation-delay:${i * 25}ms` });
+			bar.append(svgEl('title', {}, `${labels[i]}: ${fmt.format(v)}`));
+			svg.append(bar);
+			svg.append(svgEl('text', { x: sx(Math.max(0, v)) + 6, y: y0 + rowH / 2 + 1, class: 'val' }, compact.format(v)));
+		});
+		return h('div', { class: 'chart-wrap' }, svg as unknown as Node, last!.rows.length > 40 ? h('p', { class: 'muted pad' }, 'First 40 rows.') : null);
+	}
+
+	function lineChart(xf: J, xi: number, ys: J[]) {
+		const rows = last!.rows;
+		const W = 640;
+		const H = 300;
+		const L = 54;
+		const R = 16;
+		const T = 12;
+		const B = 30;
+		const xs = rows.map((r, k) => (kindOf(xf) === 'text' ? k : (num(r[xi], xf) ?? k)));
+		const all = ys.flatMap((y: J) => rows.map((r) => num(r[y.i], y.f)).filter((v): v is number => v !== null));
+		let ymin = Math.min(...all);
+		let ymax = Math.max(...all);
+		if (ymin === ymax) [ymin, ymax] = [ymin - 1, ymax + 1];
+		const pad = (ymax - ymin) * 0.08;
+		ymin = ymin >= 0 && ymin - pad < 0 ? 0 : ymin - pad;
+		ymax += pad;
+		const xmin = Math.min(...xs);
+		const xmax = Math.max(...xs);
+		const sx = (v: number) => L + ((v - xmin) / (xmax - xmin || 1)) * (W - L - R);
+		const sy = (v: number) => T + (1 - (v - ymin) / (ymax - ymin)) * (H - T - B);
+		const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart', role: 'img' });
+		for (const t of ticks(ymin, ymax)) {
+			svg.append(svgEl('line', { x1: L, x2: W - R, y1: sy(t), y2: sy(t), class: 'gridline' }));
+			svg.append(svgEl('text', { x: L - 8, y: sy(t) + 4, class: 'tick', 'text-anchor': 'end' }, compact.format(t)));
+		}
+		const timeX = kindOf(xf) === 'date' || kindOf(xf) === 'time';
+		const xt = timeX
+			? [0, 0.25, 0.5, 0.75, 1].map((p) => xmin + p * (xmax - xmin))
+			: ticks(xmin, xmax, 5);
+		for (const t of xt) {
+			const label = timeX ? new Date(t).toISOString().slice(0, xmax - xmin < 3 * 864e5 ? 13 : 10).replace('T', ' ') : compact.format(t);
+			svg.append(svgEl('text', { x: sx(t), y: H - 8, class: 'tick', 'text-anchor': 'middle' }, label));
+		}
+		ys.forEach((y: J, k: number) => {
+			const color = COLORS[k % COLORS.length];
+			let d = '';
+			let started = false;
+			rows.forEach((r, i) => {
+				const v = num(r[y.i], y.f);
+				if (v === null) {
+					started = false;
+					return;
+				}
+				d += `${started ? 'L' : 'M'}${sx(xs[i]).toFixed(1)},${sy(v).toFixed(1)}`;
+				started = true;
+			});
+			if (k === 0) {
+				const area = svgEl('path', { d: `${d}L${sx(xs[xs.length - 1])},${sy(ymin)}L${sx(xs[0])},${sy(ymin)}Z`, fill: color, class: 'area' });
+				svg.append(area);
+			}
+			const path = svgEl('path', { d, stroke: color, class: 'line' });
+			svg.append(path);
+		});
+		// Hover: a guide line and a readout.
+		const guide = svgEl('line', { y1: T, y2: H - B, class: 'guide', visibility: 'hidden' });
+		svg.append(guide);
+		const readout = h('div', { class: 'readout', hidden: true });
+		svg.addEventListener('pointermove', (e) => {
+			const box = svg.getBoundingClientRect();
+			const px = ((e.clientX - box.left) / box.width) * W;
+			let best = 0;
+			for (let i = 1; i < xs.length; i++) if (Math.abs(sx(xs[i]) - px) < Math.abs(sx(xs[best]) - px)) best = i;
+			guide.setAttribute('x1', String(sx(xs[best])));
+			guide.setAttribute('x2', String(sx(xs[best])));
+			guide.setAttribute('visibility', 'visible');
+			const r = rows[best];
+			readout.replaceChildren(
+				h('b', {}, text(r[xi], xf)),
+				...ys.map((y: J, k: number) => h('span', {}, h('i', { style: `background:${COLORS[k % COLORS.length]}` }), `${y.f.name}: ${text(r[y.i], y.f)}`)),
+			);
+			readout.hidden = false;
+		});
+		svg.addEventListener('pointerleave', () => {
+			guide.setAttribute('visibility', 'hidden');
+			readout.hidden = true;
+		});
+		return h('div', { class: 'chart-wrap' }, svg as unknown as Node, readout);
+	}
+
+	// ---- plan ----------------------------------------------------------------------------
+
+	async function drawPlan() {
+		if (!last || planFor === last.sql) return;
+		planFor = last.sql;
+		if (!isQuery(last.sql)) {
+			panes.plan.replaceChildren(h('p', { class: 'muted pad' }, 'Plans are for queries. Run a SELECT to see one.'));
+			return;
+		}
+		panes.plan.replaceChildren(h('p', { class: 'muted pad' }, 'Profiling…'));
+		try {
+			const res = await conn.query(`EXPLAIN ANALYZE ${stripComments(last.sql)}`);
+			const col = res.getChildAt(res.schema.fields.length - 1);
+			const out: string[] = [];
+			for (let r = 0; r < res.numRows; r++) out.push(String(col.get(r)));
+			panes.plan.replaceChildren(h('pre', { class: 'plan' }, out.join('\n')));
+		} catch (err) {
+			panes.plan.replaceChildren(h('pre', { class: 'err pad' }, (err as Error).message));
+		}
+	}
+
+	// ---- tabs ----------------------------------------------------------------------------
+
+	function show(which: 'table' | 'chart' | 'plan') {
+		tab = which;
+		for (const b of root.querySelectorAll<HTMLButtonElement>('[data-tab]')) b.classList.toggle('on', b.dataset.tab === which);
+		for (const [k, p] of Object.entries(panes)) p.hidden = k !== which;
+		if (which === 'plan') drawPlan();
+	}
+	for (const b of root.querySelectorAll<HTMLButtonElement>('[data-tab]')) b.addEventListener('click', () => show(b.dataset.tab as any));
+
+	// ---- export and share ----------------------------------------------------------------
+
+	function download(name: string, blob: Blob) {
+		const a = h('a', { href: URL.createObjectURL(blob), download: name }) as HTMLAnchorElement;
+		document.body.append(a);
+		a.click();
+		setTimeout(() => {
+			URL.revokeObjectURL(a.href);
+			a.remove();
+		}, 1000);
+	}
+
+	$('[data-csv]').addEventListener('click', async () => {
+		if (!last) return;
+		const csvCell = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+		if (isQuery(last.sql) && last.total > last.rows.length) {
+			// All rows, straight from DuckDB.
+			await conn.query(`COPY (${stripComments(last.sql)}) TO 'result.csv' (HEADER)`);
+			const buf = await db.copyFileToBuffer('result.csv');
+			return download('result.csv', new Blob([buf], { type: 'text/csv' }));
+		}
+		const lines = [last.fields.map((f: J) => csvCell(f.name)).join(',')];
+		for (const r of last.rows) lines.push(r.map((v, j) => (v === null || v === undefined ? '' : csvCell(text(v, last!.fields[j])))).join(','));
+		download('result.csv', new Blob([lines.join('\n')], { type: 'text/csv' }));
+	});
+
+	$('[data-parquet]').addEventListener('click', async () => {
+		if (!last || !isQuery(last.sql)) return;
+		try {
+			await conn.query(`COPY (${stripComments(last.sql)}) TO 'result.parquet' (FORMAT parquet, COMPRESSION zstd)`);
+			const buf = await db.copyFileToBuffer('result.parquet');
+			download('result.parquet', new Blob([buf], { type: 'application/octet-stream' }));
+		} catch (err) {
+			showError((err as Error).message);
+		}
+	});
+
+	const b64 = {
+		enc: (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+		dec: (s: string) => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))),
+	};
+	function saveHash() {
+		if (editor.value.length < 4000) history.replaceState(null, '', `#sql=${b64.enc(editor.value)}`);
+	}
+	function fromHash(): string | null {
+		const m = location.hash.match(/^#sql=([\w-]+)/);
+		if (!m) return null;
+		try {
+			return b64.dec(m[1]);
+		} catch {
+			return null;
+		}
+	}
+	$('[data-share]').addEventListener('click', (e) => {
+		saveHash();
+		const btn = e.currentTarget as HTMLButtonElement;
+		navigator.clipboard?.writeText(location.href).then(() => {
+			btn.textContent = 'Copied';
+			setTimeout(() => (btn.textContent = 'Copy link'), 1500);
+		});
+	});
+
+	syncEditor();
+	boot();
+</script>
+
+<style is:global>
+	.wrap.sql {
+		max-width: 1180px;
+		padding-bottom: 2rem;
+	}
+	.sql .bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1rem 0 0.9rem;
+		border-bottom: 1px solid var(--rule);
+	}
+	.sql .title {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+	}
+	.sql .title h1 {
+		margin: 0;
+		font-size: 1.15rem;
+	}
+	.sql .glyph {
+		font-family: var(--font-mono), ui-monospace, monospace;
+		color: var(--glow, var(--accent));
+	}
+	.sql .back {
+		font-size: 0.85rem;
+		color: var(--ink-3);
+		text-decoration: none;
+	}
+	.sql .engine {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.3rem 0.7rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.72rem;
+		color: var(--ink-2);
+		white-space: nowrap;
+	}
+	.sql .engine i {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		background: #f7c873;
+		animation: sql-pulse 1s ease-in-out infinite;
+	}
+	.sql .engine.ok i {
+		background: var(--glow);
+		box-shadow: 0 0 8px var(--glow);
+		animation: none;
+	}
+	.sql .engine.err i {
+		background: #ff6b6b;
+		animation: none;
+	}
+
+	.sql .layout {
+		display: grid;
+		grid-template-columns: 240px minmax(0, 1fr);
+		gap: 1.25rem;
+		margin-top: 1.25rem;
+	}
+	.sql .label {
+		margin: 0 0 0.5rem;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--ink-3);
+	}
+	.sql .label:not(:first-child) {
+		margin-top: 1.25rem;
+	}
+	.sql .muted {
+		color: var(--ink-3);
+		font-size: 0.82rem;
+	}
+	.sql .pad {
+		margin: 0;
+		padding: 0.9rem 1rem;
+	}
+	.sql .tables,
+	.sql .cols {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+	.sql .tables > li {
+		position: relative;
+	}
+	.sql .tname {
+		display: flex;
+		align-items: center;
+		gap: 0.45rem;
+		width: 100%;
+		padding: 0.35rem 1.8rem 0.35rem 0.5rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: var(--ink);
+		font: inherit;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.82rem;
+		text-align: left;
+		cursor: pointer;
+	}
+	.sql .tname:hover {
+		background: var(--paper-2);
+	}
+	.sql .tname .ico {
+		color: var(--glow, var(--accent));
+		font-size: 0.75rem;
+	}
+	.sql .tname em {
+		margin-left: auto;
+		font-style: normal;
+		font-size: 0.68rem;
+		color: var(--ink-3);
+	}
+	.sql .peek {
+		position: absolute;
+		right: 0.2rem;
+		top: 0.25rem;
+		border: 0;
+		background: none;
+		color: var(--ink-3);
+		font-size: 0.7rem;
+		cursor: pointer;
+		padding: 0.2rem 0.35rem;
+	}
+	.sql .peek:hover {
+		color: var(--glow, var(--accent));
+	}
+	.sql .cols {
+		margin: 0.1rem 0 0.4rem 1.4rem;
+		border-left: 1px solid var(--rule);
+	}
+	.sql .cols li {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		padding: 0.1rem 0.5rem;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.74rem;
+	}
+	.sql .cols button {
+		border: 0;
+		background: none;
+		color: var(--ink-2);
+		font: inherit;
+		padding: 0;
+		cursor: pointer;
+	}
+	.sql .cols button:hover {
+		color: var(--ink);
+	}
+	.sql .cols em {
+		font-style: normal;
+		color: var(--ink-3);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		max-width: 50%;
+	}
+	.sql .drop {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		margin-top: 0.75rem;
+		padding: 0.75rem;
+		border: 1px dashed var(--rule);
+		border-radius: 10px;
+		cursor: pointer;
+		transition:
+			border-color 0.15s ease,
+			background 0.15s ease;
+	}
+	.sql .drop b {
+		font-size: 0.85rem;
+		color: var(--glow, var(--accent));
+	}
+	.sql .drop span {
+		font-size: 0.75rem;
+		color: var(--ink-3);
+	}
+	.sql .drop:hover,
+	.sql .drop.over {
+		border-color: var(--glow, var(--accent));
+		background: var(--glow-wash, var(--accent-wash));
+	}
+	.sql .recipes {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+	}
+	.sql .recipe {
+		padding: 0.45rem 0.6rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: var(--paper-2);
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.82rem;
+		text-align: left;
+		cursor: pointer;
+		transition: border-color 0.15s ease;
+	}
+	.sql .recipe:hover {
+		border-color: var(--glow, var(--accent));
+	}
+
+	.sql .editor {
+		position: relative;
+		height: 15rem;
+		border: 1px solid var(--rule);
+		border-radius: 12px;
+		background: rgba(0, 0, 0, 0.35);
+		overflow: hidden;
+	}
+	.sql .editor:focus-within {
+		border-color: rgba(79, 240, 180, 0.5);
+		box-shadow: 0 0 0 1px rgba(79, 240, 180, 0.15), 0 0 30px rgba(79, 240, 180, 0.06);
+	}
+	.sql .editor textarea,
+	.sql .editor .hl {
+		position: absolute;
+		inset: 0;
+		margin: 0;
+		padding: 0.9rem 1rem;
+		border: 0;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 13.5px;
+		line-height: 1.6;
+		tab-size: 2;
+		white-space: pre;
+		overflow: auto;
+		background: none;
+	}
+	.sql .editor .hl {
+		color: var(--ink);
+		pointer-events: none;
+		scrollbar-width: none;
+	}
+	.sql .editor .hl::-webkit-scrollbar {
+		display: none;
+	}
+	.sql .editor textarea {
+		color: transparent;
+		caret-color: var(--glow, var(--accent));
+		resize: none;
+		outline: 0;
+	}
+	.sql .hl .k {
+		color: #c792ea;
+	}
+	.sql .hl .f {
+		color: #5cc8ff;
+	}
+	.sql .hl .s {
+		color: #f7c873;
+	}
+	.sql .hl .q {
+		color: #ffb38a;
+	}
+	.sql .hl .n {
+		color: #ff9a6e;
+	}
+	.sql .hl .c {
+		color: var(--ink-3);
+		font-style: italic;
+	}
+
+	.sql .actions {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		margin: 0.75rem 0;
+	}
+	.sql .spacer {
+		flex: 1;
+	}
+	.sql .run {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.5rem 1rem;
+		border: 0;
+		border-radius: 8px;
+		background: var(--glow, var(--accent));
+		color: #04140d;
+		font: inherit;
+		font-weight: 650;
+		cursor: pointer;
+		box-shadow: 0 0 22px rgba(79, 240, 180, 0.25);
+	}
+	.sql .run kbd {
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.7rem;
+		opacity: 0.6;
+	}
+	.sql .run:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.sql .run.going {
+		animation: sql-pulse 0.8s ease-in-out infinite;
+	}
+	.sql .ghost {
+		padding: 0.45rem 0.8rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: none;
+		color: var(--ink-2);
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.sql .ghost:disabled {
+		opacity: 0.4;
+		cursor: default;
+	}
+	.sql .ghost:not(:disabled):hover {
+		color: var(--ink);
+		border-color: var(--ink-3);
+	}
+
+	.sql .results {
+		border: 1px solid var(--rule);
+		border-radius: 12px;
+		background: var(--paper-2);
+		overflow: hidden;
+	}
+	.sql .tabs {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		padding: 0.35rem 0.5rem;
+		border-bottom: 1px solid var(--rule);
+	}
+	.sql .tabs button {
+		padding: 0.35rem 0.75rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		color: var(--ink-3);
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.sql .tabs button.on {
+		background: rgba(255, 255, 255, 0.06);
+		color: var(--ink);
+	}
+	.sql .stat {
+		margin-left: auto;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.72rem;
+		color: var(--glow, var(--ink-3));
+		white-space: nowrap;
+	}
+	.sql .pane {
+		min-height: 12rem;
+	}
+	.sql .grid {
+		max-height: 30rem;
+		overflow: auto;
+	}
+	.sql table {
+		width: 100%;
+		border-collapse: collapse;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.78rem;
+	}
+	.sql th {
+		position: sticky;
+		top: 0;
+		z-index: 1;
+		padding: 0.5rem 0.75rem;
+		background: var(--paper-2);
+		border-bottom: 1px solid var(--rule);
+		text-align: left;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.sql th em {
+		display: block;
+		font-style: normal;
+		font-weight: 400;
+		font-size: 0.66rem;
+		color: var(--ink-3);
+	}
+	.sql td {
+		padding: 0.35rem 0.75rem;
+		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+		white-space: nowrap;
+		max-width: 28rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		color: var(--ink-2);
+	}
+	.sql tbody tr:hover td {
+		background: rgba(79, 240, 180, 0.04);
+		color: var(--ink);
+	}
+	.sql .num {
+		text-align: right;
+		font-variant-numeric: tabular-nums;
+	}
+	.sql td.num {
+		color: var(--cyan, var(--ink));
+	}
+	.sql .null {
+		color: var(--ink-3);
+		font-style: italic;
+	}
+	.sql .rn {
+		color: var(--ink-3);
+		text-align: right;
+		width: 1%;
+	}
+	.sql .err {
+		color: #ff8a8a;
+		white-space: pre-wrap;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.8rem;
+	}
+	.sql .plan {
+		margin: 0;
+		padding: 1rem;
+		max-height: 34rem;
+		overflow: auto;
+		background: none;
+		border: 0;
+		font-size: 0.72rem;
+		line-height: 1.35;
+		color: var(--ink-2);
+	}
+
+	.sql .chart-wrap {
+		position: relative;
+		padding: 0.5rem 1rem 1rem;
+	}
+	.sql .chart {
+		width: 100%;
+		height: auto;
+		display: block;
+		overflow: visible;
+	}
+	.sql .chart .gridline {
+		stroke: rgba(255, 255, 255, 0.06);
+	}
+	.sql .chart .tick,
+	.sql .chart .lbl,
+	.sql .chart .val {
+		fill: var(--ink-3);
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 10.5px;
+	}
+	.sql .chart .lbl {
+		fill: var(--ink-2);
+	}
+	.sql .chart .hbar {
+		fill: var(--glow, var(--accent));
+		opacity: 0.9;
+		transform-box: fill-box;
+		transform-origin: left;
+		animation: sql-grow 0.5s ease both;
+	}
+	.sql .chart .hbar:hover {
+		opacity: 1;
+		filter: drop-shadow(0 0 6px rgba(79, 240, 180, 0.6));
+	}
+	.sql .chart .line {
+		fill: none;
+		stroke-width: 2;
+		stroke-linejoin: round;
+		filter: drop-shadow(0 0 4px currentColor);
+	}
+	.sql .chart .area {
+		opacity: 0.08;
+	}
+	.sql .chart .guide {
+		stroke: var(--ink-3);
+		stroke-dasharray: 3 3;
+	}
+	.sql .legend {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 1rem;
+		padding: 0.75rem 1rem 0;
+		font-size: 0.78rem;
+		color: var(--ink-2);
+	}
+	.sql .legend i,
+	.sql .readout i {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 2px;
+		margin-right: 0.35rem;
+	}
+	.sql .readout {
+		position: absolute;
+		top: 0.75rem;
+		right: 1.25rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		padding: 0.5rem 0.7rem;
+		border: 1px solid var(--rule);
+		border-radius: 8px;
+		background: rgba(7, 9, 13, 0.92);
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.72rem;
+		color: var(--ink-2);
+		pointer-events: none;
+	}
+	.sql .readout b {
+		color: var(--ink);
+	}
+	.sql .foot {
+		margin: 1rem 0 0;
+		font-size: 0.75rem;
+		color: var(--ink-3);
+	}
+
+	@keyframes sql-pulse {
+		50% {
+			opacity: 0.45;
+		}
+	}
+	@keyframes sql-grow {
+		from {
+			transform: scaleX(0);
+		}
+	}
+	@media (max-width: 860px) {
+		.sql .layout {
+			grid-template-columns: 1fr;
+		}
+		.sql .recipes {
+			flex-direction: row;
+			flex-wrap: wrap;
+		}
+		.sql .editor {
+			height: 12rem;
+		}
+		.sql .title .back {
+			display: none;
+		}
+		.sql .run kbd {
+			display: none;
+		}
+	}
+</style>

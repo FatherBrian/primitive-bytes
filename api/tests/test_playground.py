@@ -1,4 +1,4 @@
-"""Playground runs over Kelpworks, with the scripted model (no key, no spend)."""
+"""Playground runs over the sample company, with the scripted model (no key, no spend)."""
 
 from __future__ import annotations
 

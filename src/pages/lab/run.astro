@@ -7,7 +7,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 ---
 
 <Demo title="A saved run" description="Someone ran this in the Lab. This is exactly what the model saw and did, played back.">
-	<section class="replay" slot="demo" data-replay data-api={api}>
+	<section class="replay console" slot="demo" data-replay data-api={api}>
 		<p class="eyebrow" data-what>Loading…</p>
 		<p class="meta" data-meta></p>
 		<Transcript />
@@ -25,13 +25,13 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 	const DEMOS: Record<string, { title: string; page: string; options: Record<string, string> }> = {
 		'rug-pull': {
-			title: 'Reef lock: the rug pull',
-			page: '/lab/reef-lock/',
+			title: 'The rug pull',
+			page: '/lab/chat/?scenario=rug-pull-locked',
 			options: { none: 'No protection', 'reef-lock': 'Through Reef, with the lock' },
 		},
 		grant: {
-			title: 'Grant playground',
-			page: '/lab/grant-playground/',
+			title: 'Task grants',
+			page: '/lab/chat/?scenario=payroll-headcount',
 			options: { headcount: 'Headcount review', 'headcount-pii': 'Headcount review, with pii' },
 		},
 	};
@@ -60,7 +60,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		const when = new Date(run.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 		let demo = DEMOS[run.scenario];
 		if (run.scenario === 'playground') {
-			// The option is the run's config; reopen that exact setup in the playground.
+			// The option is the run's config; reopen that exact setup in the chat.
 			const c = JSON.parse(run.option);
 			const p = new URLSearchParams({ servers: c.servers.join(','), gw: c.gateway, prompt: c.prompt });
 			if (c.gateway === 'reef') {
@@ -68,7 +68,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 				p.set('lock', c.lock ? '1' : '0');
 			}
 			const setup = (run.events as Ev[]).find((e) => e.type === 'setup');
-			demo = { title: `Playground · ${setup?.prompt ?? 'a run'}`, page: `/lab/playground/?${p}`, options: {} };
+			demo = { title: `Agent chat · ${setup?.prompt ?? 'a run'}`, page: `/lab/chat/?${p}`, options: {} };
 			meta.textContent = `Claude Haiku 5.5 · ${when}`;
 		} else {
 			meta.textContent = `${demo?.options[run.option] ?? run.option} · Claude Haiku 5.5 · ${when}`;
@@ -80,7 +80,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		foot.hidden = false;
 		const a = document.createElement('a');
 		a.href = url(demo?.page ?? '/lab/');
-		a.textContent = run.scenario === 'playground' ? 'Open this setup in the playground →' : 'Run it yourself →';
+		a.textContent = run.scenario === 'playground' ? 'Open this setup in the chat →' : 'Run it yourself →';
 		foot.replaceChildren(`This run cost $${Number(run.cost_usd).toFixed(4)}. `, a);
 	}
 

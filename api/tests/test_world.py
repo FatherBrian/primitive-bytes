@@ -1,4 +1,4 @@
-"""Kelpworks, the explorer's world: the traps fire, and Reef and Trellis catch what they can."""
+"""The sample company, the explorer's world: the traps fire, and Reef and Trellis catch what they can."""
 
 from __future__ import annotations
 

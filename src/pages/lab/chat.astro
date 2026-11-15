@@ -1,5 +1,5 @@
 ---
-// Chat with Kelpworks's agent: the playground's backend behind a chat. Each message is one
+// The agent chat: a live agent over sample MCP servers, behind a chat. Each message is one
 // live run; MCP Apps views render inline in the answer, and the full trace (tool calls,
 // results, ledger, what each server received) folds away under it.
 import Page from '../../layouts/Page.astro';
@@ -10,13 +10,13 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 <Page
 	title="Chat with an agent"
-	description="Chat with an agent inside Kelpworks, a fake company with real MCP servers. Change what it can reach, put Reef in front of it, and watch every tool call, view and ledger entry."
+	description="Chat with an agent wired to real MCP servers, some of them hostile. Change what it can reach, put a gateway in front, and watch every tool call, view and ledger entry."
 >
-	<section class="chat wrap" data-chat data-api={api}>
+	<section class="chat wrap console" data-chat data-api={api}>
 		<header class="bar">
 			<div class="title">
 				<a class="back" href={url('/lab/')}>← Lab</a>
-				<h1>Kelpworks agent</h1>
+				<h1><span class="glyph">›_</span> Agent chat</h1>
 			</div>
 			<div class="bar-actions">
 				<button type="button" class="pill" data-open-setup aria-expanded="false" aria-controls="setup">
@@ -48,18 +48,15 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 					</div>
 				</fieldset>
 			</div>
-			<p class="hint">
-				Changes apply to your next message. For side-by-side runs, use the
-				<a href={url('/lab/playground/')}>builder</a>.
-			</p>
+			<p class="hint">Changes apply to your next message.</p>
 		</div>
 
 		<div class="thread" data-thread aria-live="polite">
 			<div class="empty" data-empty>
 				<p class="intro">
-					This agent works at <a href={url('/lab/explore/')}>Kelpworks</a>, a made-up company with
-					real MCP servers: a wiki, support tickets, a CRM, HR, mail, and a third-party plugin.
-					Some of those servers misbehave. Ask it something, then change its setup and ask again.
+					This agent is the internal assistant at a made-up company, wired to real MCP servers: a
+					wiki, support tickets, a CRM, HR, a sales warehouse, mail, and a third-party plugin. Some
+					of those servers misbehave. Ask it something, then change its setup and ask again.
 				</p>
 				<p class="muted" data-status>{api ? 'Loading…' : 'The chat needs the demo server, which isn’t set up here.'}</p>
 				<h2 class="label" data-scen-label hidden>Scenarios</h2>
@@ -72,7 +69,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		<form class="composer" data-composer>
 			<div class="follow chips" data-follow></div>
 			<div class="box">
-				<textarea name="text" rows="1" placeholder="Ask Kelpworks's agent…" data-input disabled></textarea>
+				<textarea name="text" rows="1" placeholder="Ask the agent…" data-input disabled></textarea>
 				<button type="submit" class="send" data-send disabled aria-label="Send">↑</button>
 			</div>
 			<p class="foot">
@@ -163,7 +160,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	function buildSetup() {
 		$('[data-servers]').replaceChildren(
 			...world.servers.map((s: J) =>
-				h('label', { class: 'check', title: s.about ?? '' }, h('input', { type: 'checkbox', name: 'servers', value: s.name }), ` ${s.title ?? s.name}`),
+				h('label', { class: 'check', title: s.about ?? '' }, h('input', { type: 'checkbox', name: 'servers', value: s.name }), ` ${String(s.title ?? s.name).replace(/^Kelpworks\s+/, '')}`),
 			),
 		);
 		$('[data-task]').replaceChildren(...world.tasks.map((t: J) => h('option', { value: t.id }, t.label)));
@@ -412,10 +409,43 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 			$('[data-status]').hidden = !$('[data-status]').textContent;
 			buildSetup();
 			drawStart();
+			fromLink();
 		} catch {
 			$('[data-status]').textContent = 'Couldn’t reach the demo server. Try again in a minute.';
 		}
 	}
+	// Links from elsewhere: ?scenario=<preset id>, or a setup (servers, gw, task, lock, prompt).
+	// A link sets things up; it never spends a run until the visitor taps.
+	function fromLink() {
+		const q = new URLSearchParams(location.search);
+		const preset = (world.presets ?? []).find((p: J) => p.id === q.get('scenario'));
+		let prompt: J | undefined;
+		if (preset) {
+			const { prompt: pid, text, ...c } = preset.config;
+			config = { ...config, ...c };
+			prompt = world.prompts.find((x: J) => x.id === pid);
+		} else if (q.get('servers')) {
+			const known = new Set(world.servers.map((s: J) => s.name));
+			const gw = q.get('gw') === 'direct' ? 'direct' : 'reef';
+			config = {
+				servers: q.get('servers')!.split(',').filter((s) => known.has(s)),
+				gateway: gw,
+				task: gw === 'reef' ? q.get('task') || 'everything' : null,
+				lock: gw === 'reef' && q.get('lock') === '1',
+			};
+			prompt = world.prompts.find((x: J) => x.id === q.get('prompt'));
+		} else return;
+		drawSetup();
+		const pick = h(
+			'button',
+			{ type: 'button', class: 'scenario picked', onclick: () => (preset ? runPreset(preset) : ask({ prompt: prompt!.id, text: prompt!.text })) },
+			h('strong', {}, preset ? preset.label : 'From your link'),
+			h('span', {}, prompt ? `Tap to ask: “${prompt.text}”` : setupLabel(config)),
+		);
+		if (prompt || preset) $('[data-scenarios]').prepend(pick);
+		$('[data-scen-label]').hidden = false;
+	}
+
 	start();
 </script>
 
@@ -435,7 +465,8 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		justify-content: space-between;
 		gap: 0.75rem;
 		padding: 1rem 0 0.75rem;
-		background: var(--paper);
+		background: color-mix(in srgb, var(--paper) 85%, transparent);
+		backdrop-filter: blur(10px);
 		border-bottom: 1px solid var(--rule);
 	}
 	.chat .title {
@@ -447,6 +478,18 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 	.chat .title h1 {
 		margin: 0;
 		font-size: 1.15rem;
+	}
+	.chat .glyph {
+		font-family: var(--font-mono), ui-monospace, monospace;
+		color: var(--glow, var(--accent));
+		margin-right: 0.2rem;
+	}
+	.chat .scenario.picked {
+		border-color: var(--glow, var(--accent));
+		box-shadow: 0 0 0 1px var(--glow-wash, transparent), 0 0 24px var(--glow-wash, transparent);
+	}
+	.chat .box:focus-within {
+		box-shadow: 0 0 0 1px var(--accent), 0 0 30px var(--accent-wash);
 	}
 	.chat .back {
 		font-size: 0.85rem;

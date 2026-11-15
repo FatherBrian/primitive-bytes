@@ -5,13 +5,12 @@ import Page from '../../layouts/Page.astro';
 import { url } from '../../url';
 ---
 
-<Page title="Recent runs" description="What people have run in the Lab lately: real model runs against Kelpworks, each one replayable.">
-	<section class="wrap head">
+<Page title="Recent runs" description="What people have run in the Lab lately: real model runs of the agent chat, each one replayable.">
+	<section class="wrap head console">
 		<a class="back eyebrow" href={url('/lab/')}>← Lab</a>
 		<h1>Recent runs</h1>
 		<p class="dek">
-			Real model runs from the <a href={url('/lab/playground/')}>playground</a> and the demos, newest
-			first. Open one to replay it step by step. Runs with someone's own question are never listed
+			Real model runs from the <a href={url('/lab/chat/')}>agent chat</a>, newest first. Open one to replay it step by step. Runs with someone's own question are never listed
 			here; only the person with the link can see those.
 		</p>
 	</section>

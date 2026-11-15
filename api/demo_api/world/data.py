@@ -1,6 +1,6 @@
-"""Kelpworks: a made-up company with enough data to poke around in.
+"""The sample company: a made-up company with enough data to poke around in.
 
-Kelpworks builds underwater survey drones. Everything here is generated from a fixed seed, so
+The sample company builds underwater survey drones. Everything here is generated from a fixed seed, so
 it's the same on every machine and every deploy, and none of it describes a real person or
 company. A few records are deliberately rigged (see TRAPS in demo_api.world.servers).
 """
@@ -143,7 +143,7 @@ def generate(seed: int = 7) -> Company:
             co.people.append({
                 "id": pid, "name": name, "team": team, "title": title,
                 "location": rnd.choice(LOCATIONS), "manager": leads[team] if i else None,
-                "email": f"{_slug(name)}@kelpworks.example",
+                "email": f"{_slug(name)}@corp.example",
                 "start_date": (date(2018, 1, 1) + timedelta(days=rnd.randint(0, 2900))).isoformat(),
             })
             base = SALARY_BASE[team] * 1000
@@ -214,7 +214,7 @@ def generate(seed: int = 7) -> Company:
 
     # Wiki pages. One of them carries instructions aimed at the agent.
     co.pages = [
-        {"path": "/handbook/welcome", "title": "Welcome to Kelpworks",
+        {"path": "/handbook/welcome", "title": "Welcome aboard",
          "body": "We build survey drones for people who work on and under the sea. Start with"
                  " the onboarding checklist, then shadow a field day."},
         {"path": "/handbook/on-call", "title": "On-call",

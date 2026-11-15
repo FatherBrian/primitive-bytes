@@ -340,3 +340,48 @@ pre {
 	font-size: 0.72rem;
 	word-break: break-word;
 }
+
+/* ---------------------------------------------------------------------------------------
+   The Lab: a dark console whatever the site theme. Any page with a .console element on it
+   switches to these colors, header and footer included.
+   --------------------------------------------------------------------------------------- */
+:root:has(.console) {
+	--paper: #07090d;
+	--paper-2: #0d1118;
+	--ink: #e7edf3;
+	--ink-2: #a8b3c1;
+	--ink-3: #6c7787;
+	--rule: #1c2330;
+	--accent: #ff7a45;
+	--accent-ink: #ff9a6e;
+	--accent-wash: rgba(255, 122, 69, 0.12);
+	--code-bg: #0d1118;
+	--glow: #4ff0b4;
+	--glow-wash: rgba(79, 240, 180, 0.1);
+	--cyan: #5cc8ff;
+	--shadow: 0 0 0 1px rgba(255, 255, 255, 0.02), 0 12px 40px rgba(0, 0, 0, 0.45);
+	color-scheme: dark;
+}
+:root:has(.console) body {
+	background:
+		radial-gradient(1100px 520px at 85% -8%, rgba(79, 240, 180, 0.07), transparent 60%),
+		radial-gradient(900px 480px at -10% 8%, rgba(255, 122, 69, 0.07), transparent 60%),
+		var(--paper);
+	background-attachment: fixed;
+}
+:root:has(.console) body::before {
+	/* a faint grid, fading out down the page */
+	content: '';
+	position: fixed;
+	inset: 0;
+	pointer-events: none;
+	z-index: -1;
+	background-image:
+		linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+	background-size: 32px 32px;
+	mask-image: linear-gradient(to bottom, black, transparent 70%);
+}
+.console ::selection {
+	background: rgba(79, 240, 180, 0.3);
+}
