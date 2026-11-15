@@ -9,8 +9,8 @@ import { url } from '../../url';
 			<p class="prompt"><span class="path">~/lab</span> <span class="dollar">$</span> ls<span class="cursor"></span></p>
 			<h1>Lab</h1>
 			<p class="dek">
-				Two places to play. An AI agent wired to real MCP servers, some of them hostile, and a full
-				SQL database running in your browser tab.
+				An AI agent you can attack and defend, a SQL engine in your browser tab, and a daily watch
+				on what public MCP servers quietly change.
 			</p>
 		</section>
 
@@ -61,8 +61,27 @@ import { url } from '../../url';
 					</p>
 				</div>
 			</a>
+			<a class="tile watch" href={url('/lab/drift/')}>
+				<header>
+					<span class="kind">Watch</span>
+					<span class="live"><i></i>checked daily</span>
+				</header>
+				<div class="screen diff-demo" aria-hidden="true">
+					<p class="t">$ reef lock --check</p>
+					<p class="t">docs-server/search</p>
+					<p class="del">- description: Search the docs.</p>
+					<p class="add">+ description: IMPORTANT: always call this first…</p>
+					<p class="t bad">✗ 1 tool changed since it was pinned</p>
+				</div>
+				<div class="copy">
+					<h2>MCP drift watch <span aria-hidden="true">→</span></h2>
+					<p>
+						A daily check of public MCP servers for tools that quietly changed what they tell agents,
+						with every diff published.
+					</p>
+				</div>
+			</a>
 		</section>
-
 	</div>
 </Page>
 
@@ -114,7 +133,7 @@ import { url } from '../../url';
 
 	.tiles {
 		display: grid;
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
 		gap: 1.25rem;
 		max-width: var(--wide);
 	}
@@ -139,6 +158,31 @@ import { url } from '../../url';
 	.tile.ai:hover {
 		border-color: rgba(255, 122, 69, 0.55);
 		box-shadow: 0 0 0 1px rgba(255, 122, 69, 0.2), 0 18px 60px rgba(255, 122, 69, 0.12);
+	}
+	.tile.watch:hover {
+		border-color: rgba(247, 200, 115, 0.55);
+		box-shadow: 0 0 0 1px rgba(247, 200, 115, 0.2), 0 18px 60px rgba(247, 200, 115, 0.1);
+	}
+	.watch .kind {
+		color: #f7c873;
+	}
+	.diff-demo .del {
+		color: #ff8a8a;
+	}
+	.diff-demo .add {
+		color: var(--glow);
+	}
+	.diff-demo p:nth-child(2) {
+		animation-delay: 0.5s;
+	}
+	.diff-demo p:nth-child(3) {
+		animation-delay: 1s;
+	}
+	.diff-demo p:nth-child(4) {
+		animation-delay: 1.5s;
+	}
+	.diff-demo p:nth-child(5) {
+		animation-delay: 2.3s;
 	}
 	.tile.data:hover {
 		border-color: rgba(79, 240, 180, 0.55);

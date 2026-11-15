@@ -17,4 +17,12 @@ export const DEMOS = [
 		kind: 'sql',
 		section: 'Data',
 	},
+	{
+		path: '/lab/drift/',
+		title: 'MCP drift watch',
+		blurb:
+			'Every day, reef.lock checks public MCP servers for tools whose descriptions or schemas changed, and publishes the diffs.',
+		kind: 'drift',
+		section: 'AI',
+	},
 ] as const;

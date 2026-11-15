@@ -1,0 +1,407 @@
+---
+// MCP drift watch: what public MCP servers changed about their tools, day by day.
+// The data comes from monitor/drift.py, run daily by .github/workflows/drift.yml.
+import Page from '../../layouts/Page.astro';
+import history from '../../data/drift/history.json';
+import status from '../../data/drift/status.json';
+import { url } from '../../url';
+
+type Event = { at: string; server: string; tool: string; kind: string; diff: string; before?: string; after?: string };
+type Server = { status: string; tools?: number; where?: string; kind?: string; first_seen?: string; last_change?: string; checked?: string; error?: string };
+
+const servers = Object.entries((status as { servers: Record<string, Server> }).servers ?? {}).sort(
+	([a, x], [b, y]) => (y.last_change ?? '').localeCompare(x.last_change ?? '') || a.localeCompare(b),
+);
+const events = history as Event[];
+const checked = (status as { checked?: string }).checked;
+const tools = (status as { tools?: number }).tools ?? 0;
+const day = (iso?: string) => (iso ? new Date(iso).toISOString().slice(0, 10) : '');
+
+// Words that make a description read like an instruction to the model, not a description.
+const RED_FLAGS = [
+	[/\b(important|must|always|never|before you|instead of|do not tell|don't tell|ignore)\b/i, 'tells the model what to do'],
+	[/https?:\/\//i, 'adds a link'],
+	[/[\w.+-]+@[\w-]+\.[\w.]+/, 'adds an email address'],
+	[/<[a-z][^>]*>/i, 'adds markup'],
+] as const;
+function flags(e: Event): string[] {
+	if (e.kind !== 'changed' && e.kind !== 'added') return [];
+	const after = e.after ?? '';
+	const before = e.before ?? '';
+	return RED_FLAGS.filter(([re]) => re.test(after) && !re.test(before)).map(([, why]) => why);
+}
+
+const byDay = new Map<string, Event[]>();
+for (const e of events) {
+	const d = day(e.at);
+	byDay.set(d, [...(byDay.get(d) ?? []), e]);
+}
+const KIND: Record<string, string> = { changed: 'changed', added: 'new tool', removed: 'removed' };
+---
+
+<Page
+	title="MCP drift watch"
+	description="Every day, reef.lock checks public MCP servers and records any tool whose description, schema or annotations changed. A changed description is a changed instruction to every agent that uses it."
+>
+	<section class="drift wrap console">
+		<header class="bar">
+			<div class="title">
+				<a class="back" href={url('/lab/')}>← Lab</a>
+				<h1><span class="glyph">›_</span> MCP drift watch</h1>
+			</div>
+			<span class="engine ok"><i></i>{checked ? `checked ${day(checked)}` : 'first check pending'}</span>
+		</header>
+
+		<p class="lede">
+			A tool's description is an instruction to every agent that uses it, and an MCP server can
+			change it any time without telling anyone. Every day a GitHub Action runs
+			<a href="https://github.com/FatherBrian/trellis/tree/main/reef"><code>reef lock</code></a> against
+			these public servers and records every tool that changed, appeared or disappeared.
+		</p>
+
+		<div class="stats">
+			<div><b>{servers.length}</b><span>servers watched</span></div>
+			<div><b>{tools}</b><span>tools pinned</span></div>
+			<div><b>{events.length}</b><span>changes seen</span></div>
+			<div><b>{events.filter((e) => flags(e).length).length}</b><span>worth a look</span></div>
+		</div>
+
+		<h2 class="label">// servers</h2>
+		{
+			servers.length === 0 ? (
+				<p class="muted">The first check hasn't run yet.</p>
+			) : (
+				<ul class="servers">
+					{servers.map(([name, s]) => (
+						<li class={s.status}>
+							<span class="dot" />
+							<div class="who">
+								<b>{name}</b>
+								<code>{s.where}</code>
+							</div>
+							<div class="what">
+								{s.status === 'unreachable' ? (
+									<span class="bad" title={s.error}>unreachable</span>
+								) : s.status === 'skipped' ? (
+									<span class="bad" title={s.error}>skipped</span>
+								) : (
+									<>
+										<span>{s.tools} tools</span>
+										<em>{s.last_change ? `changed ${day(s.last_change)}` : `unchanged since ${day(s.first_seen)}`}</em>
+									</>
+								)}
+							</div>
+						</li>
+					))}
+				</ul>
+			)
+		}
+
+		<h2 class="label">// changes</h2>
+		{
+			events.length === 0 ? (
+				<p class="muted">
+					No changes yet. The first run pins every tool; from then on, anything that differs shows up
+					here with its diff.
+				</p>
+			) : (
+				[...byDay].map(([d, list]) => (
+					<section class="day">
+						<h3>{d}</h3>
+						{list.map((e) => (
+							<details class={`event ${flags(e).length ? 'flagged' : ''}`} open={flags(e).length > 0}>
+								<summary>
+									<span class={`kind ${e.kind}`}>{KIND[e.kind] ?? e.kind}</span>
+									<b>{e.server}</b>/<code>{e.tool}</code>
+									{flags(e).map((f) => (
+										<span class="flag">{f}</span>
+									))}
+								</summary>
+								{e.diff ? (
+									<pre class="diff">{e.diff.split('\n').filter((l) => !l.startsWith('---') && !l.startsWith('+++')).map((l) => (<span class={l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : l.startsWith('@@') ? 'hunk' : ''}>{l + '\n'}</span>))}</pre>
+								) : (
+									<p class="muted pad">{e.kind === 'removed' ? 'The server stopped offering this tool.' : e.after ?? ''}</p>
+								)}
+							</details>
+						))}
+					</section>
+				))
+			)
+		}
+
+		<p class="foot">
+			How it works: <a href="https://github.com/FatherBrian/primitive-bytes/blob/main/monitor/drift.py">monitor/drift.py</a>
+			pins each tool's title, description, schemas, annotations and MCP Apps view, exactly as
+			<code>reef.lock</code> does, and compares them with yesterday's
+			<a href="https://github.com/FatherBrian/primitive-bytes/blob/main/monitor/reef.lock">lock</a>.
+			Stdio servers run their latest npm release. "Worth a look" is a simple text check, not a verdict.
+		</p>
+	</section>
+</Page>
+
+<style>
+	.drift {
+		max-width: 900px;
+		padding-bottom: 3rem;
+	}
+	.bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 1rem 0 0.9rem;
+		border-bottom: 1px solid var(--rule);
+	}
+	.title {
+		display: flex;
+		align-items: baseline;
+		gap: 0.75rem;
+	}
+	.title h1 {
+		margin: 0;
+		font-size: 1.15rem;
+	}
+	.glyph {
+		font-family: var(--font-mono), ui-monospace, monospace;
+		color: var(--glow);
+	}
+	.back {
+		font-size: 0.85rem;
+		color: var(--ink-3);
+		text-decoration: none;
+	}
+	.engine {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.3rem 0.7rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.72rem;
+		color: var(--ink-2);
+		white-space: nowrap;
+	}
+	.engine i {
+		width: 0.5rem;
+		height: 0.5rem;
+		border-radius: 50%;
+		background: var(--glow);
+		box-shadow: 0 0 8px var(--glow);
+	}
+	.lede {
+		max-width: 64ch;
+		margin: 1.25rem 0 0;
+		color: var(--ink-2);
+		font-size: 1.02rem;
+		line-height: 1.6;
+	}
+	.lede a,
+	.foot a {
+		color: var(--glow);
+	}
+	.stats {
+		display: grid;
+		grid-template-columns: repeat(4, 1fr);
+		gap: 0.75rem;
+		margin: 1.75rem 0 0;
+	}
+	.stats div {
+		padding: 0.9rem 1rem;
+		border: 1px solid var(--rule);
+		border-radius: 12px;
+		background: var(--paper-2);
+	}
+	.stats b {
+		display: block;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 1.6rem;
+		color: var(--ink);
+	}
+	.stats span {
+		font-size: 0.78rem;
+		color: var(--ink-3);
+	}
+	.label {
+		margin: 2.25rem 0 0.75rem;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.78rem;
+		font-weight: 500;
+		color: var(--ink-3);
+	}
+	.muted {
+		color: var(--ink-3);
+		font-size: 0.9rem;
+	}
+	.pad {
+		margin: 0;
+		padding: 0.75rem 1rem;
+	}
+	.servers {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		border: 1px solid var(--rule);
+		border-radius: 12px;
+		overflow: hidden;
+	}
+	.servers li {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		padding: 0.65rem 1rem;
+		border-bottom: 1px solid var(--rule);
+		background: var(--paper-2);
+	}
+	.servers li:last-child {
+		border-bottom: 0;
+	}
+	.dot {
+		flex: none;
+		width: 0.55rem;
+		height: 0.55rem;
+		border-radius: 50%;
+		background: var(--glow);
+		box-shadow: 0 0 6px var(--glow);
+	}
+	.changed .dot {
+		background: #f7c873;
+		box-shadow: 0 0 6px #f7c873;
+	}
+	.unreachable .dot,
+	.skipped .dot {
+		background: var(--ink-3);
+		box-shadow: none;
+	}
+	.who {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+	}
+	.who b {
+		font-size: 0.92rem;
+	}
+	.who code {
+		font-size: 0.7rem;
+		color: var(--ink-3);
+		background: none;
+		padding: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.what {
+		margin-left: auto;
+		display: flex;
+		flex-direction: column;
+		align-items: flex-end;
+		font-size: 0.8rem;
+		white-space: nowrap;
+	}
+	.what em {
+		font-style: normal;
+		font-size: 0.72rem;
+		color: var(--ink-3);
+	}
+	.bad {
+		color: var(--ink-3);
+		text-decoration: underline dotted;
+	}
+	.day h3 {
+		margin: 1.25rem 0 0.5rem;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.82rem;
+		color: var(--ink-2);
+	}
+	.event {
+		margin-bottom: 0.5rem;
+		border: 1px solid var(--rule);
+		border-radius: 10px;
+		background: var(--paper-2);
+		overflow: hidden;
+	}
+	.event.flagged {
+		border-color: rgba(255, 107, 107, 0.5);
+	}
+	.event summary {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.6rem 0.9rem;
+		cursor: pointer;
+		font-size: 0.88rem;
+	}
+	.event summary code {
+		background: none;
+		padding: 0;
+		font-size: 0.82rem;
+	}
+	.kind {
+		padding: 0.1rem 0.45rem;
+		border-radius: 4px;
+		font-family: var(--font-mono), ui-monospace, monospace;
+		font-size: 0.68rem;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		background: rgba(247, 200, 115, 0.15);
+		color: #f7c873;
+	}
+	.kind.added {
+		background: var(--glow-wash);
+		color: var(--glow);
+	}
+	.kind.removed {
+		background: rgba(255, 255, 255, 0.06);
+		color: var(--ink-3);
+	}
+	.flag {
+		padding: 0.1rem 0.45rem;
+		border-radius: 4px;
+		font-size: 0.7rem;
+		background: rgba(255, 107, 107, 0.15);
+		color: #ff8a8a;
+	}
+	.diff {
+		margin: 0;
+		padding: 0.75rem 1rem;
+		border: 0;
+		border-top: 1px solid var(--rule);
+		border-radius: 0;
+		background: rgba(0, 0, 0, 0.3);
+		font-size: 0.74rem;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		word-break: break-word;
+		max-height: 24rem;
+		overflow: auto;
+	}
+	.diff .add {
+		color: var(--glow);
+		background: rgba(79, 240, 180, 0.06);
+	}
+	.diff .del {
+		color: #ff8a8a;
+		background: rgba(255, 107, 107, 0.06);
+	}
+	.diff .hunk {
+		color: var(--cyan);
+	}
+	.foot {
+		margin: 2rem 0 0;
+		font-size: 0.78rem;
+		color: var(--ink-3);
+		line-height: 1.6;
+	}
+	@media (max-width: 640px) {
+		.stats {
+			grid-template-columns: repeat(2, 1fr);
+		}
+		.title .back {
+			display: none;
+		}
+		.who code {
+			max-width: 46vw;
+		}
+	}
+</style>
