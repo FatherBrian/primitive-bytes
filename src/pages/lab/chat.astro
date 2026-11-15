@@ -67,6 +67,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		</div>
 
 		<form class="composer" data-composer>
+			<button type="button" class="jump" data-jump hidden>↓ New messages</button>
 			<div class="follow chips" data-follow></div>
 			<div class="box">
 				<textarea name="text" rows="1" placeholder="Ask the agent…" data-input disabled></textarea>
@@ -229,9 +230,52 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 
 	// ---- messages ------------------------------------------------------------------------
 
-	function scrollDown() {
-		requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+	// Scrolling: keep the newest message just above the composer, not the page's footer.
+	// Follow new content only while the reader is at the bottom; if they scroll up to read,
+	// leave them there and offer a "new messages" button instead.
+	const composer = $('[data-composer]');
+	const jump = $<HTMLButtonElement>('[data-jump]');
+	let following = true;
+	let programmatic = false;
+
+	function bottomTarget() {
+		const threadBottom = thread.getBoundingClientRect().bottom + window.scrollY;
+		return Math.max(0, threadBottom - window.innerHeight + composer.offsetHeight + 12);
 	}
+
+	function scrollDown(force = false) {
+		if (force) following = true;
+		if (!following) {
+			if (running) jump.hidden = false;
+			return;
+		}
+		requestAnimationFrame(() => {
+			const top = bottomTarget();
+			if (Math.abs(window.scrollY - top) < 2) return;
+			programmatic = true;
+			window.scrollTo({ top, behavior: force ? 'smooth' : 'auto' });
+			setTimeout(() => (programmatic = false), force ? 400 : 50);
+		});
+	}
+
+	window.addEventListener(
+		'scroll',
+		() => {
+			if (programmatic || empty.hidden === false) return;
+			following = window.scrollY >= bottomTarget() - 80;
+			if (following) jump.hidden = true;
+		},
+		{ passive: true },
+	);
+	// Views (iframes) and the trace change size after they arrive; stay pinned through that.
+	new ResizeObserver(() => {
+		if (!empty.hidden) return;
+		scrollDown();
+	}).observe(thread);
+	jump.addEventListener('click', () => {
+		jump.hidden = true;
+		scrollDown(true);
+	});
 
 	function userBubble(text: string, note?: string) {
 		thread.append(
@@ -265,7 +309,7 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		lock(true);
 		userBubble(q.text, note);
 		const m = agentMessage();
-		scrollDown();
+		scrollDown(true);
 
 		const earlier = keepHistory ? history.slice(-keepHistory) : [];
 		const body: J = {
@@ -383,6 +427,9 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		empty.hidden = false;
 		newButton.hidden = true;
 		follow.replaceChildren();
+		jump.hidden = true;
+		following = true;
+		window.scrollTo({ top: 0 });
 	});
 
 	// ---- start ---------------------------------------------------------------------------
@@ -829,6 +876,24 @@ const api = import.meta.env.PUBLIC_DEMO_API ?? '';
 		bottom: 0;
 		padding: 0.75rem 0 1rem;
 		background: linear-gradient(to bottom, transparent, var(--paper) 1.25rem);
+	}
+	.chat .jump {
+		position: absolute;
+		left: 50%;
+		top: -2.4rem;
+		transform: translateX(-50%);
+		padding: 0.35rem 0.85rem;
+		border: 1px solid var(--rule);
+		border-radius: 999px;
+		background: var(--paper-2);
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.8rem;
+		box-shadow: var(--shadow);
+		cursor: pointer;
+	}
+	.chat .jump[hidden] {
+		display: none;
 	}
 	.chat .follow {
 		margin-bottom: 0.5rem;
