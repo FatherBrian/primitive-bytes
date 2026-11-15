@@ -1,0 +1,50 @@
+name: MCP drift watch
+
+# Once a day: list the tools of a set of public MCP servers, compare them with
+# monitor/reef.lock, record what changed, and redeploy the site if anything did.
+on:
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: drift
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install reef
+        run: |
+          pip install "trellisd @ git+https://github.com/FatherBrian/trellis@1614fb768900022e89211bcdf267ecbc8d0142cc" \
+            "reef-mcp @ git+https://github.com/FatherBrian/trellis@1614fb768900022e89211bcdf267ecbc8d0142cc#subdirectory=reef"
+      - name: Check every server
+        run: python monitor/drift.py
+      - name: Commit and redeploy if anything changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git add monitor/reef.lock src/data/drift
+          if git diff --cached --quiet; then
+            echo "Nothing new."
+            exit 0
+          fi
+          git config user.name "drift-watch"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "drift: $(date -u +%Y-%m-%d)"
+          git push
+          # Pushes made with this token don't start other workflows, so ask for a deploy.
+          gh workflow run deploy.yml --ref main

@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "deepwiki": { "url": "https://mcp.deepwiki.com/mcp" },
+    "cloudflare-docs": { "url": "https://docs.mcp.cloudflare.com/mcp" },
+    "microsoft-learn": { "url": "https://learn.microsoft.com/api/mcp" },
+    "aws-knowledge": { "url": "https://knowledge-mcp.global.api.aws" },
+    "context7": { "url": "https://mcp.context7.com/mcp" },
+    "semgrep": { "url": "https://mcp.semgrep.ai/mcp" },
+    "huggingface": { "url": "https://huggingface.co/mcp" },
+    "gitmcp": { "url": "https://gitmcp.io/modelcontextprotocol/modelcontextprotocol" },
+    "fetch-remote": { "url": "https://remote.mcpservers.org/fetch/mcp" },
+    "everything": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-everything"] },
+    "memory": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-memory"] },
+    "sequential-thinking": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"] },
+    "filesystem": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] },
+    "playwright": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] }
+  }
+}
