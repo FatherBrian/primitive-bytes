@@ -9,7 +9,7 @@
    "status": "stable",
    "tools": 3,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "cloudflare-docs": {
    "where": "https://docs.mcp.cloudflare.com/mcp",
@@ -20,7 +20,7 @@
    "status": "stable",
    "tools": 2,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "microsoft-learn": {
    "where": "https://learn.microsoft.com/api/mcp",
@@ -31,7 +31,7 @@
    "status": "stable",
    "tools": 3,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "aws-knowledge": {
    "where": "https://knowledge-mcp.global.api.aws",
@@ -42,7 +42,7 @@
    "status": "stable",
    "tools": 5,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "context7": {
    "where": "https://mcp.context7.com/mcp",
@@ -53,7 +53,7 @@
    "status": "stable",
    "tools": 2,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "huggingface": {
    "where": "https://huggingface.co/mcp",
@@ -64,7 +64,7 @@
    "status": "stable",
    "tools": 4,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "gitmcp": {
    "where": "https://gitmcp.io/modelcontextprotocol/modelcontextprotocol",
@@ -75,7 +75,7 @@
    "status": "stable",
    "tools": 4,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "everything": {
    "where": "npx -y @modelcontextprotocol/server-everything",
@@ -86,7 +86,7 @@
    "status": "stable",
    "tools": 13,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "memory": {
    "where": "npx -y @modelcontextprotocol/server-memory",
@@ -97,7 +97,7 @@
    "status": "stable",
    "tools": 9,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "sequential-thinking": {
    "where": "npx -y @modelcontextprotocol/server-sequential-thinking",
@@ -108,7 +108,7 @@
    "status": "stable",
    "tools": 1,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "filesystem": {
    "where": "npx -y @modelcontextprotocol/server-filesystem /tmp",
@@ -119,20 +119,20 @@
    "status": "stable",
    "tools": 14,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   },
   "playwright": {
    "where": "npx -y @playwright/mcp@latest",
    "kind": "stdio",
    "homepage": null,
    "first_seen": "2026-11-15T03:24:40Z",
-   "last_change": null,
-   "status": "stable",
+   "last_change": "2026-11-19T18:13:46Z",
+   "status": "changed",
    "tools": 25,
    "error": null,
-   "checked": "2026-11-18T18:00:13Z"
+   "checked": "2026-11-19T18:13:46Z"
   }
  },
- "checked": "2026-11-18T18:00:13Z",
+ "checked": "2026-11-19T18:13:46Z",
  "tools": 85
 }

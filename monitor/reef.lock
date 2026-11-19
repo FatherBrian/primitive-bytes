@@ -2946,13 +2946,13 @@ servers:
         openWorldHint: true
         readOnlyHint: false
         title: Close browser
-      description: Close the page
+      description: Close the browser and all open tabs.
       inputSchema:
         $schema: https://json-schema.org/draft/2020-12/schema
         additionalProperties: false
         properties: {}
         type: object
-      sha256: sha256:d39f57110668bacfcc3615704f7224013f8800aa18aa32d95373e0f528528077
+      sha256: sha256:4f3f119b7e698fcb1652e1623fee17d1464e002b426539330cbe3de6230730c8
     browser_console_messages:
       annotations:
         destructiveHint: false
