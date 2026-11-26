@@ -306,7 +306,12 @@ servers:
 
 
         If you know the programming language the user is working in, pass it as `language` so the results
-        match their setup.'
+        match their setup.
+
+
+        If the user''s project or question names a version of the library (package.json, a lockfile, "Next.js
+        14"), pass it as `version`. Context7 serves that version''s documentation, or the closest version
+        it has, and says which one it served.'
       inputSchema:
         $schema: https://json-schema.org/draft/2020-12/schema
         properties:
@@ -317,8 +322,8 @@ servers:
             type: string
           libraryId:
             description: Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js',
-              '/supabase/supabase', '/vercel/next.js/v16.2.9') retrieved from 'resolve-library-id' or
-              directly from user query in the format '/org/project' or '/org/project/version'.
+              '/supabase/supabase') retrieved from 'resolve-library-id' or directly from user query in
+              the format '/org/project' or '/org/project/version'.
             type: string
           query:
             description: 'What to look up in the library''s documentation, scoped to a single concept.
@@ -331,11 +336,16 @@ servers:
               information such as API keys, passwords, credentials, personal data, or proprietary code
               in your query.'
             type: string
+          version:
+            description: Version of the library the user's project uses or the question names, as written
+              there, such as '15.4.3', '^15.4.3' or '14'. Pass it here, not as a suffix of libraryId.
+              Leave it out for the latest documentation.
+            type: string
         required:
         - libraryId
         - query
         type: object
-      sha256: sha256:7b8331499ec7556c02ac5bcde83901d6975b8f90baa4a57834ef06afd2913a39
+      sha256: sha256:5c7da23d43d9c775e208a1214e11efd0c5c4361a008f097b93fb1e7ef6334f75
       title: Query Documentation
     resolve-library-id:
       annotations:
@@ -365,9 +375,6 @@ servers:
         - Source Reputation: Authority indicator (High, Medium, Low, or Unknown)
 
         - Benchmark Score: Quality indicator (100 is the highest score)
-
-        - Versions: List of versions if available. Use one of those versions if the user provides a version
-        in their query. The format of the version is /org/project/version.
 
 
         For best results, select libraries based on name match, source reputation, snippet coverage, benchmark
@@ -425,7 +432,7 @@ servers:
         - query
         - libraryName
         type: object
-      sha256: sha256:3ba66a570dcee8adaac6f51697d2ec7c56d67256739738acec4d20c7379b9f70
+      sha256: sha256:6f7a15e680fe359b3a17a0830e4e50a1fa3e72036f35b426ab261d17843cb365
       title: Resolve Context7 Library ID
   deepwiki:
     ask_wiki_question:
