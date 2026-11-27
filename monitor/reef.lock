@@ -1657,6 +1657,7 @@ servers:
                         - HF_FS_ATTACHMENT_BUDGET_EXCEEDED
                         - HF_FS_IMAGE_CONTENT_DISABLED
                         - HF_FS_ATTACHMENT_INTEGRITY
+                        - HF_FS_UPSTREAM_ERROR
                         type: string
                       message:
                         type: string
@@ -1702,7 +1703,7 @@ servers:
         required:
         - results
         type: object
-      sha256: sha256:2fe6253e21d6bdca2306559aae97ecdd0854ab16d34e673e1d5a3b2ba06f2c6d
+      sha256: sha256:460285cd93519c5340978d714959e6a1f8100eda2e530eb1c6aa53a1572133b0
       title: 'Hugging Face Hub: Find, use and view models, datasets, spaces, buckets, papers, documentation
         and collections. Get daily papers reports, and browse trending content. '
     hf_whoami:
